@@ -2599,7 +2599,7 @@ static int hub_set_address(struct usb_device *udev, int devnum)
 	} else {
 		retval = usb_control_msg(udev, usb_sndaddr0pipe(),
 				USB_REQ_SET_ADDRESS, 0, devnum, 0,
-				NULL, 0, USB_CTRL_SET_TIMEOUT);
+				NULL, 0, 1000);
 		if (retval == 0)
 			update_address(udev, devnum);
 	}
@@ -3639,7 +3639,8 @@ static int usb_reset_and_verify_device(struct usb_device *udev)
 	parent_hub = hdev_to_hub(parent_hdev);
 
 	set_bit(port1, parent_hub->busy_bits);
-	for (i = 0; i < SET_CONFIG_TRIES; ++i) {
+//	for (i = 0; i < SET_CONFIG_TRIES; ++i) {
+        for (i = 0; i < 1; ++i) {
 
 		/* ep0 maxpacket size may change; let the HCD know about it.
 		 * Other endpoints will be handled by re-enumeration. */

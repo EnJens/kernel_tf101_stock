@@ -200,7 +200,7 @@ static int __ref take_cpu_down(void *_param)
 	struct take_cpu_down_param *param = _param;
 	unsigned int cpu = (unsigned long)param->hcpu;
 	int err;
-
+        printk("take_cpu_down cpu=%u\n",smp_processor_id());
 	/* Ensure this CPU doesn't handle any more interrupts. */
 	err = __cpu_disable();
 	if (err < 0)
@@ -227,7 +227,7 @@ static int __ref _cpu_down(unsigned int cpu, int tasks_frozen)
 		.mod = mod,
 		.hcpu = hcpu,
 	};
-
+      printk("_cpu_down cpu_id=%u cpu=%u num_online_cpus() =%u cpu_online(%u)=%u\n",smp_processor_id(),cpu,num_online_cpus(),cpu,cpu_online(cpu) );
 	if (num_online_cpus() == 1)
 		return -EBUSY;
 
@@ -243,12 +243,12 @@ static int __ref _cpu_down(unsigned int cpu, int tasks_frozen)
 				__func__, cpu);
 		goto out_release;
 	}
-
 	err = __stop_machine(take_cpu_down, &tcd_param, cpumask_of(cpu));
-	if (err) {
+	 if (err) {
+		printk("%s: attempt to take down CPU %u failed+++\n",__func__, cpu);
 		/* CPU didn't die: tell everyone.  Can't complain. */
 		cpu_notify_nofail(CPU_DOWN_FAILED | mod, hcpu);
-
+		printk("%s: attempt to take down CPU %u failed----\n",__func__, cpu);
 		goto out_release;
 	}
 	BUG_ON(cpu_online(cpu));
@@ -312,7 +312,9 @@ static int __cpuinit _cpu_up(unsigned int cpu, int tasks_frozen)
 	}
 
 	/* Arch-specific enabling code. */
+	printk("_cpu_up+\n");
 	ret = __cpu_up(cpu);
+	printk("_cpu_up- ret=%x\n",ret );
 	if (ret != 0)
 		goto out_notify;
 	BUG_ON(!cpu_online(cpu));
@@ -323,6 +325,7 @@ static int __cpuinit _cpu_up(unsigned int cpu, int tasks_frozen)
 out_notify:
 	if (ret != 0)
 		__cpu_notify(CPU_UP_CANCELED | mod, hcpu, nr_calls, NULL);
+	printk("_cpu_up ret CPU_UP_CANCELED");
 	cpu_hotplug_done();
 
 	return ret;
@@ -389,7 +392,6 @@ static cpumask_var_t frozen_cpus;
 int disable_nonboot_cpus(void)
 {
 	int cpu, first_cpu, error = 0;
-
 	cpu_maps_update_begin();
 	first_cpu = cpumask_first(cpu_online_mask);
 	/*
@@ -397,11 +399,12 @@ int disable_nonboot_cpus(void)
 	 * with the userspace trying to use the CPU hotplug at the same time
 	 */
 	cpumask_clear(frozen_cpus);
+       printk("Disabling non-boot CPUs ... cpu_index=%u first_cpu=%u\n",smp_processor_id(),first_cpu);
 
-	printk("Disabling non-boot CPUs ...\n");
 	for_each_online_cpu(cpu) {
 		if (cpu == first_cpu)
 			continue;
+		printk("disable_nonboot_cpus  cpu=%u\n",cpu);
 		error = _cpu_down(cpu, 1);
 		if (!error)
 			cpumask_set_cpu(cpu, frozen_cpus);
@@ -434,7 +437,7 @@ void __weak arch_enable_nonboot_cpus_end(void)
 void __ref enable_nonboot_cpus(void)
 {
 	int cpu, error;
-
+      printk("enable_nonboot_cpus\n");
 	/* Allow everyone to use the CPU hotplug again */
 	cpu_maps_update_begin();
 	cpu_hotplug_disabled = 0;

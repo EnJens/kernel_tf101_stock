@@ -17,11 +17,14 @@
 #include <linux/mmc/card.h>
 #include <linux/mmc/mmc.h>
 #include <linux/mmc/sd.h>
+#include <linux/gpio.h>
 
 #include "core.h"
 #include "bus.h"
 #include "mmc_ops.h"
 #include "sd_ops.h"
+
+#include "../debug_mmc.h"
 
 static const unsigned int tran_exp[] = {
 	10000,		100000,		1000000,	10000000,
@@ -247,6 +250,7 @@ static int mmc_read_ssr(struct mmc_card *card)
 	}
 out:
 	kfree(ssr);
+	ssr = NULL;
 	return err;
 }
 
@@ -299,6 +303,7 @@ static int mmc_read_switch(struct mmc_card *card)
 
 out:
 	kfree(status);
+	status = NULL;
 
 	return err;
 }
@@ -347,6 +352,7 @@ int mmc_sd_switch_hs(struct mmc_card *card)
 
 out:
 	kfree(status);
+	status = NULL;
 
 	return err;
 }
@@ -605,7 +611,7 @@ static int mmc_sd_init_card(struct mmc_host *host, u32 ocr,
 	if (!mmc_host_is_spi(host)) {
 		err = mmc_send_relative_addr(host, &card->rca);
 		if (err)
-			goto free_card;
+			return err;
 
 		mmc_set_bus_mode(host, MMC_BUSMODE_PUSHPULL);
 	}
@@ -613,7 +619,7 @@ static int mmc_sd_init_card(struct mmc_host *host, u32 ocr,
 	if (!oldcard) {
 		err = mmc_sd_get_csd(host, card);
 		if (err)
-			goto free_card;
+			return err;
 
 		mmc_decode_cid(card);
 	}
@@ -624,7 +630,7 @@ static int mmc_sd_init_card(struct mmc_host *host, u32 ocr,
 	if (!mmc_host_is_spi(host)) {
 		err = mmc_select_card(card);
 		if (err)
-			goto free_card;
+			return err;
 	}
 
 	err = mmc_sd_setup_card(host, card, oldcard != NULL);
@@ -672,10 +678,11 @@ free_card:
  */
 static void mmc_sd_remove(struct mmc_host *host)
 {
-	if (host && host->card) {
-		mmc_remove_card(host->card);
-		host->card = NULL;
-	}
+	BUG_ON(!host);
+	BUG_ON(!host->card);
+
+	mmc_remove_card(host->card);
+	host->card = NULL;
 }
 
 /*
@@ -697,18 +704,26 @@ static void mmc_sd_detect(struct mmc_host *host)
 	 * Just check if our card has been removed.
 	 */
 #ifdef CONFIG_MMC_PARANOID_SD_INIT
-	while(retries) {
-		err = mmc_send_status(host->card, NULL);
-		if (err) {
-			retries--;
-			udelay(5);
-			continue;
-		}
-		break;
-	}
-	if (!retries) {
-		printk(KERN_ERR "%s(%s): Unable to re-detect card (%d)\n",
-		       __func__, mmc_hostname(host), err);
+       if(gpio_get_value(SD_CARD_DETECT) == 1)
+       {
+              MMC_printk("%s: sd skip re-detect card", mmc_hostname(host));
+              err = 1;
+       }
+       else
+       {
+       	while(retries) {
+       		err = mmc_send_status(host->card, NULL);
+       		if (err) {
+       			retries--;
+       			udelay(5);
+       			continue;
+       		}
+       		break;
+       	}
+       	if (!retries) {
+       		printk(KERN_ERR "%s(%s): Unable to re-detect card (%d)\n",
+       		       __func__, mmc_hostname(host), err);
+       	}
 	}
 #else
 	err = mmc_send_status(host->card, NULL);
@@ -764,6 +779,11 @@ static int mmc_sd_resume(struct mmc_host *host)
 		err = mmc_sd_init_card(host, host->ocr, host->card);
 
 		if (err) {
+			if(gpio_get_value(SD_CARD_DETECT) == 1)
+			{
+				MMC_printk("%s: Stop sd init, gpio_%d %d", mmc_hostname(host), SD_CARD_DETECT, gpio_get_value(SD_CARD_DETECT));
+				break;
+			}
 			printk(KERN_ERR "%s: Re-init card rc = %d (retries = %d)\n",
 			       mmc_hostname(host), err, retries);
 			mdelay(5);
@@ -884,8 +904,8 @@ int mmc_attach_sd(struct mmc_host *host, u32 ocr)
 	}
 
 	if (!retries) {
-		printk(KERN_ERR "%s: mmc_sd_init_card() failure (err = %d)\n",
-		       mmc_hostname(host), err);
+		printk(KERN_ERR "%s: mmc_sd_init_card() failure (err = %d) CMD%u\n",
+		       mmc_hostname(host), err, host->opcode);
 		goto err;
 	}
 #else
@@ -910,8 +930,8 @@ err:
 	mmc_detach_bus(host);
 	mmc_release_host(host);
 
-	printk(KERN_ERR "%s: error %d whilst initialising SD card\n",
-		mmc_hostname(host), err);
+	printk(KERN_ERR "%s: error %d whilst initialising SD card CMD%u\n",
+		mmc_hostname(host), err, host->opcode);
 
 	return err;
 }

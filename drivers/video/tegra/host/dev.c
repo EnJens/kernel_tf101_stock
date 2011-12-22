@@ -42,6 +42,7 @@
 
 static int nvhost_major = NVHOST_MAJOR;
 static int nvhost_minor = NVHOST_CHANNEL_BASE;
+static unsigned int war_count = 0;
 
 struct nvhost_channel_userctx {
 	struct nvhost_channel *ch;
@@ -810,13 +811,21 @@ static int __exit nvhost_remove(struct platform_device *pdev)
 static int nvhost_suspend(struct platform_device *pdev, pm_message_t state)
 {
 	struct nvhost_master *host = platform_get_drvdata(pdev);
+	bool ret = false;
+
 	dev_info(&pdev->dev, "suspending\n");
-	nvhost_module_suspend(&host->mod, true);
-	clk_enable(host->mod.clk[0]);
-	nvhost_syncpt_save(&host->syncpt);
-	clk_disable(host->mod.clk[0]);
-	dev_info(&pdev->dev, "suspended\n");
-	return 0;
+	ret = nvhost_module_suspend(&host->mod, true);
+	if (ret == true) {
+		clk_enable(host->mod.clk[0]);
+		nvhost_syncpt_save(&host->syncpt);
+		clk_disable(host->mod.clk[0]);
+		dev_info(&pdev->dev, "suspended\n");
+		return 0;
+	} else {
+		war_count++;
+		printk("nvhost_suspend workaround for \"%s\" is triggerred (count= %d).\n", host->mod.name, war_count);
+		return 1; /* 1 stands for "error". */
+	}
 }
 
 static int nvhost_resume(struct platform_device *pdev)

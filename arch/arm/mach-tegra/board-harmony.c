@@ -66,9 +66,45 @@ struct tag_tegra {
 	char bootarg[1];
 };
 
+/* The flag is used for inidicating GPS function preemption.
+ * GPS function is able to preempt UARTD interface already allocated to
+ * debug console only if the flag is set to 1.
+ */
+unsigned int g_NvBootArgsGPSPreemption = 0;
+EXPORT_SYMBOL(g_NvBootArgsGPSPreemption);
+
+#define NvBootArgKey_GPS 0x8
+
+typedef struct NvBootArgsGPSRec
+{
+	/* The flag is used for indicating GPS function preemption or not */
+	unsigned int flag;
+
+} NvBootArgsGPS;
+
 static int __init parse_tag_nvidia(const struct tag *tag)
 {
-	return 0;
+	const char *addr = (const char *)&tag->hdr + sizeof(struct tag_header);
+	const struct tag_tegra *nvtag = (const struct tag_tegra*)addr;
+
+	switch (nvtag->bootarg_key)
+	{
+	case NvBootArgKey_GPS:
+	{
+		const NvBootArgsGPS *src =
+			(const NvBootArgsGPS *)nvtag->bootarg;
+		if (nvtag->bootarg_len != sizeof(NvBootArgsGPS))
+		    printk("Unexpected GPS tag length!\n");
+		else
+		{
+		    printk("Found a GPS tag!\n");
+		    g_NvBootArgsGPSPreemption = src->flag;
+		}
+		return 0;
+	}
+	default:
+		return 0;
+	}
 }
 __tagtable(ATAG_NVIDIA, parse_tag_nvidia);
 

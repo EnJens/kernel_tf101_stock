@@ -41,6 +41,8 @@
 #define RTC_COUNT4	0xc6
 #define RTC_COUNT4_DUMMYREAD 0xc5  /* start a PMU RTC access by reading the register prior to the RTC_COUNT4 */
 
+struct tps6586x_rtc  *ptps6586x_rtc_dev;
+
 struct tps6586x_rtc {
 	unsigned long		epoch_start;
 	int			irq;
@@ -48,6 +50,73 @@ struct tps6586x_rtc {
 	bool			irq_en;
 };
 
+static int tps6586x_rtc_read_time(struct device *dev, struct rtc_time *tm);
+static int tps6586x_rtc_set_time(struct device *dev, struct rtc_time *tm);
+static ssize_t store_rtc_time(struct device *class,struct device_attribute *attr,const char *buf, size_t count)
+{
+	#define YEAR_OFFSET (0)
+	#define YEAR_SIZE (4)
+	#define MON_OFFSET (YEAR_SIZE+1)
+	#define MON_SIZE (2)
+	#define MDAY_OFFSET (MON_OFFSET + MON_SIZE+1)
+	#define MDAY_SIZE (2)
+       int ret=count;
+	int err=0;
+	struct rtc_time tm;
+	char year[10]={0};
+	char mon[10]={0};
+	char mday[10]={0};
+
+	memcpy(year,buf,YEAR_SIZE);
+	memcpy(mon,buf+MON_OFFSET,MON_SIZE);
+	memcpy(mday,buf+MDAY_OFFSET ,MDAY_SIZE);
+	printk("year=%s mon=%s day=%s\n",year,mon,mday);
+
+	tm.tm_year=simple_strtol(year, NULL, 0);
+	tm.tm_year-=1900;
+	tm.tm_mon=simple_strtol(mon, NULL, 0);
+	tm.tm_mon-=1;
+	tm.tm_mday=simple_strtol(mday, NULL, 0);
+	tm.tm_hour=0;
+	tm.tm_min=0;
+	tm.tm_sec=0;
+	err = rtc_valid_tm(&tm);
+	if (err != 0){
+		printk("store_rtc_time: not vaild time\n");
+		goto fail;
+	}
+	err = mutex_lock_interruptible(&ptps6586x_rtc_dev->rtc->ops_lock);
+	if (err)
+		goto fail;
+	tps6586x_rtc_set_time(ptps6586x_rtc_dev->rtc->dev.parent,&tm);
+	mutex_unlock(&ptps6586x_rtc_dev->rtc->ops_lock);
+fail:
+	return ret;
+}
+static ssize_t show_rtc_time(struct device *dev, struct device_attribute *devattr, char *buf)
+{
+	struct rtc_time tm;
+	int err=0;
+
+	printk("show_rtc_time\n");
+	err = mutex_lock_interruptible(&ptps6586x_rtc_dev->rtc->ops_lock);
+	if (err)
+		goto fail;
+	tps6586x_rtc_read_time(ptps6586x_rtc_dev->rtc->dev.parent, &tm);
+	mutex_unlock(&ptps6586x_rtc_dev->rtc->ops_lock);
+	return sprintf(buf, "%d/%d/%d\n", tm.tm_year+1900,tm.tm_mon+1,tm.tm_mday);
+fail:
+	return 0;
+}
+static DEVICE_ATTR(rtc_time, S_IWUSR | S_IRUGO, show_rtc_time,store_rtc_time);
+
+static struct attribute *tps_rtc_attributes[] = {
+	&dev_attr_rtc_time.attr,
+	NULL
+};
+static const struct attribute_group tps_rtc_group = {
+	.attrs = tps_rtc_attributes,
+};
 static inline struct device *to_tps6586x_dev(struct device *dev)
 {
 	return dev->parent;
@@ -315,7 +384,10 @@ static int __devinit tps6586x_rtc_probe(struct platform_device *pdev)
 			disable_irq(rtc->irq);
 		}
 	}
-
+	ptps6586x_rtc_dev=rtc;
+	if (sysfs_create_group(&pdev->dev.kobj, &tps_rtc_group )) {
+		printk(" tps6586x_rtc_probe : Not able to create the sysfs\n");
+	}
 	return 0;
 
 fail:

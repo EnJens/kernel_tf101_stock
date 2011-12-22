@@ -162,7 +162,7 @@ int __cpu_disable(void)
 	unsigned int cpu = smp_processor_id();
 	struct task_struct *p;
 	int ret;
-
+	printk("__cpu_disable cpu=%u\n",cpu);
 	ret = platform_cpu_disable(cpu);
 	if (ret)
 		return ret;

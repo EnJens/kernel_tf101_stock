@@ -32,10 +32,13 @@
 /* ------------------ */
 
 #undef MPL_LOG_NDEBUG
-#define MPL_LOG_NDEBUG 1
+#define MPL_LOG_NDEBUG 0
 
 #ifdef __KERNEL__
 #include <linux/module.h>
+#include <asm/uaccess.h>
+#include <linux/fs.h>
+#include <mach/board-ventana-misc.h>
 #endif
 
 #include "mpu.h"
@@ -90,6 +93,9 @@
 #define KXTF9_MAX_THS (0xFF)
 #define KXTF9_THS_COUNTS_P_G (32)
 
+#define KXTF9_CALIBRATION_PATH "/data/sensors/KXTF9_Calibration.ini"
+bool flagLoadAccelConfig = false;
+static int offset_x = 0, offset_y = 0, offset_z =0;
 /* --------------------- */
 /* -    Variables.     - */
 /* --------------------- */
@@ -112,6 +118,51 @@ struct kxtf9_private_data {
 	struct kxtf9_config suspend;
 	struct kxtf9_config resume;
 };
+static int access_calibration_file(void)
+{
+	char buf[256];
+	int ret = 0;
+	struct file *fp = NULL;
+	mm_segment_t oldfs;
+	int max_x = 0, max_y = 0, max_z = 0;
+	int min_x = 0, min_y = 0, min_z = 0;
+
+	oldfs=get_fs();
+	set_fs(get_ds());
+	memset(buf, 0, sizeof(u8)*256);
+
+	fp=filp_open(KXTF9_CALIBRATION_PATH, O_RDONLY, 0);
+	if (!IS_ERR(fp)) {
+		printk("kxtf9 open config file success\n");
+		ret = fp->f_op->read(fp, buf, sizeof(buf), &fp->f_pos);
+		printk("kxtf9 config content is :%s\n", buf);
+		sscanf(buf,"%6d %6d %6d %6d %6d %6d\n",
+			&max_x, &min_x, &max_y,	&min_y, &max_z, &min_z);
+
+		offset_x = min_x + (max_x - min_x)/2;
+		offset_y = min_y + (max_y - min_y)/2;
+		offset_z = min_z + (max_z - min_z)/2;
+		if( ASUSGetProjectID() == 102){
+			offset_x = offset_x * (-1);
+			offset_y = offset_x * (1);
+			offset_z = offset_x * (-1);
+		}
+
+		printk("kxtf9: offset: %d %d %d\n", offset_x, offset_y, offset_z);
+		filp_close(fp, NULL);
+		set_fs(oldfs);
+		return 0;
+	}
+	else{
+		offset_x = 0;
+		offset_y = 0;
+		offset_z = 0;
+		printk("No kxtf9 calibration file\n");
+		set_fs(oldfs);
+		return -1;
+	}
+
+}
 
 /*****************************************
     Accelerometer Initialization Functions
@@ -329,6 +380,7 @@ static int kxtf9_suspend(void *mlsl_handle,
 	unsigned char data;
 	struct kxtf9_private_data *private_data = pdata->private_data;
 
+	printk("%s+\n", __func__);
 	/* Wake up */
 	result = MLSLSerialWriteSingle(mlsl_handle, pdata->address,
 				KXTF9_CTRL_REG1, 0x40);
@@ -361,6 +413,7 @@ static int kxtf9_suspend(void *mlsl_handle,
 	result = MLSLSerialRead(mlsl_handle, pdata->address,
 				KXTF9_INT_REL, 1, &data);
 	ERROR_CHECK(result);
+	printk("%s-\n", __func__);
 
 	return result;
 }
@@ -377,6 +430,7 @@ static int kxtf9_resume(void *mlsl_handle,
 	unsigned char data;
 	struct kxtf9_private_data *private_data = pdata->private_data;
 
+	printk("%s+\n", __func__);
 	/* Wake up */
 	result = MLSLSerialWriteSingle(mlsl_handle, pdata->address,
 				KXTF9_CTRL_REG1, 0x40);
@@ -408,7 +462,7 @@ static int kxtf9_resume(void *mlsl_handle,
 	result = MLSLSerialRead(mlsl_handle, pdata->address,
 				KXTF9_INT_REL, 1, &data);
 	ERROR_CHECK(result);
-
+	printk("%s-\n", __func__);
 	return ML_SUCCESS;
 }
 
@@ -624,6 +678,12 @@ static int kxtf9_read(void *mlsl_handle,
 {
 	int result;
 	unsigned char reg;
+	int x, y, z;
+
+/*	if(!flagLoadAccelConfig){
+		access_calibration_file();
+		flagLoadAccelConfig = true;
+	}*/
 	result = MLSLSerialRead(mlsl_handle, pdata->address,
 				KXTF9_INT_SRC_REG2, 1, &reg);
 	ERROR_CHECK(result);
@@ -633,6 +693,27 @@ static int kxtf9_read(void *mlsl_handle,
 
 	result = MLSLSerialRead(mlsl_handle, pdata->address,
 				slave->reg, slave->len, data);
+/*	x = ((data[1] << 4) | (data[0] >> 4));
+	y = ((data[3] << 4) | (data[2] >> 4));
+	z = ((data[5] << 4) | (data[4] >> 4));
+
+	if (x & 0x800)
+		x |= 0xFFFFF000;
+	if (y & 0x800)
+		y |= 0xFFFFF000;
+	if (z & 0x800)
+		z |= 0xFFFFF000;
+
+	x -= offset_x;
+	y -= offset_y;
+	z -= offset_z;
+
+	data[0] = (x << 4) & 0x000000F0;
+	data[1] = (x >> 4) & 0x000000FF;
+	data[2] = (y << 4) & 0x000000F0;
+	data[3] = (y >> 4) & 0x000000FF;
+	data[4] = (z << 4) & 0x000000F0;
+	data[5] = (z >> 4) & 0x000000FF;*/
 	ERROR_CHECK(result);
 	return result;
 }

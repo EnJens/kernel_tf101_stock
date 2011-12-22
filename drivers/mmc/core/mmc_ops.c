@@ -299,6 +299,7 @@ mmc_send_cxd_data(struct mmc_card *card, struct mmc_host *host,
 
 	memcpy(buf, data_buf, len);
 	kfree(data_buf);
+	data_buf = NULL;
 
 	if (cmd.error)
 		return cmd.error;

@@ -163,7 +163,6 @@ struct power_supply *power_supply_get_by_name(char *name)
 	return dev ? dev_get_drvdata(dev) : NULL;
 }
 EXPORT_SYMBOL_GPL(power_supply_get_by_name);
-
 static void power_supply_dev_release(struct device *dev)
 {
 	pr_debug("device: '%s': %s\n", dev_name(dev), __func__);

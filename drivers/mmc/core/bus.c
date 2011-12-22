@@ -22,6 +22,8 @@
 #include "sdio_cis.h"
 #include "bus.h"
 
+#include "../debug_mmc.h"
+
 #define dev_to_mmc_card(d)	container_of(d, struct mmc_card, dev)
 #define to_mmc_driver(d)	container_of(d, struct mmc_driver, drv)
 
@@ -194,9 +196,13 @@ static void mmc_release_card(struct device *dev)
 	sdio_free_common_cis(card);
 
 	if (card->info)
+	{       
 		kfree(card->info);
+		card->info = NULL;
+	}
 
 	kfree(card);
+	card = NULL;
 }
 
 /*
@@ -248,7 +254,6 @@ int mmc_add_card(struct mmc_card *card)
 		type = "SD-combo";
 		if (mmc_card_blockaddr(card))
 			type = "SDHC-combo";
-		break;
 	default:
 		type = "?";
 		break;
@@ -268,13 +273,24 @@ int mmc_add_card(struct mmc_card *card)
 
 	ret = device_add(&card->dev);
 	if (ret)
+	{
+		MMC_printk("%s: error %d", mmc_hostname(card->host), ret);
 		return ret;
+	}
 
 #ifdef CONFIG_DEBUG_FS
 	mmc_add_card_debugfs(card);
 #endif
 
 	mmc_card_set_present(card);
+
+#ifdef CONFIG_MMC_BLOCK_DEFERRED_RESUME
+	if(card->type == MMC_TYPE_SD)
+	{
+		mmc_set_bus_resume_policy(card->host, 1);
+		MMC_printk("%s: bus_resume_flags %x", mmc_hostname(card->host), card->host->bus_resume_flags);
+	}
+#endif
 
 	return 0;
 }

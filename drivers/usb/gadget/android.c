@@ -31,7 +31,7 @@
 #include <linux/usb/ch9.h>
 #include <linux/usb/composite.h>
 #include <linux/usb/gadget.h>
-
+#include "../../../arch/arm/mach-tegra/clock.h"
 #include "gadget_chips.h"
 
 /*
@@ -52,10 +52,27 @@ MODULE_LICENSE("GPL");
 MODULE_VERSION("1.0");
 
 static const char longname[] = "Gadget Android";
+unsigned char * USB_SN_String = NULL;
+EXPORT_SYMBOL(USB_SN_String);
 
 /* Default vendor and product IDs, overridden by platform data */
 #define VENDOR_ID		0x18D1
 #define PRODUCT_ID		0x0001
+
+/* ASUS EP101 product ID */
+#define USB_MANUFACTURER_NAME		"ASUS"
+#define USB_PRODUCT_NAME		"EeePad"
+#define USB_PRODUCT_ID_MTP_ADB		0x4E1F
+#define USB_PRODUCT_ID_MTP		0x4E0F
+#define USB_PRODUCT_ID_RNDIS		0x4E2F
+#define USB_PRODUCT_ID_RNDIS_ADB	0x4E3F
+/* ASUS SL101 product ID */
+#define USB_SL101_PRODUCT_ID_MTP_ADB		0x4E01
+#define USB_SL101_PRODUCT_ID_MTP		0x4E00
+#define USB_SL101_PRODUCT_ID_RNDIS		0x4E02
+#define USB_SL101_PRODUCT_ID_RNDIS_ADB    0x4E03
+/* ASUS vendor ID */
+#define USB_VENDOR_ID			0x0B05
 
 struct android_dev {
 	struct usb_composite_dev *cdev;
@@ -77,6 +94,10 @@ static struct android_dev *_android_dev;
 #define STRING_MANUFACTURER_IDX		0
 #define STRING_PRODUCT_IDX		1
 #define STRING_SERIAL_IDX		2
+
+//added by yi-hsin for single driver interface name
+char * desc_interface_name=NULL;
+EXPORT_SYMBOL(desc_interface_name);
 
 /* String Table */
 static struct usb_string strings_dev[] = {
@@ -344,6 +365,15 @@ static int android_bind(struct usb_composite_dev *cdev)
 	dev->cdev = cdev;
 	device_desc.idVendor = __constant_cpu_to_le16(get_vendor_id(dev));
 	device_desc.idProduct = __constant_cpu_to_le16(get_product_id(dev));
+
+	if(device_desc.idProduct == USB_PRODUCT_ID_MTP || device_desc.idProduct == USB_SL101_PRODUCT_ID_MTP)
+		strcpy(desc_interface_name, "MTP");
+	else if(device_desc.idProduct == USB_PRODUCT_ID_RNDIS || device_desc.idProduct == USB_SL101_PRODUCT_ID_RNDIS)
+		strcpy(desc_interface_name, "ASUS RNDIS");
+	else{
+		strcpy(desc_interface_name, USB_PRODUCT_NAME);
+	}
+
 	cdev->desc.idVendor = device_desc.idVendor;
 	cdev->desc.idProduct = device_desc.idProduct;
 
@@ -450,6 +480,15 @@ void android_enable_function(struct usb_function *f, int enable)
 
 		device_desc.idVendor = __constant_cpu_to_le16(get_vendor_id(dev));
 		device_desc.idProduct = __constant_cpu_to_le16(get_product_id(dev));
+
+		if(device_desc.idProduct == USB_PRODUCT_ID_MTP || device_desc.idProduct == USB_SL101_PRODUCT_ID_MTP)
+			strcpy(desc_interface_name, "MTP");
+		else if(device_desc.idProduct == USB_PRODUCT_ID_RNDIS || device_desc.idProduct == USB_SL101_PRODUCT_ID_RNDIS)
+			strcpy(desc_interface_name, "ASUS RNDIS");
+		else{
+			strcpy(desc_interface_name, USB_PRODUCT_NAME);
+		}
+
 		if (dev->cdev) {
 			dev->cdev->desc.idVendor = device_desc.idVendor;
 			dev->cdev->desc.idProduct = device_desc.idProduct;
@@ -488,9 +527,13 @@ static int android_probe(struct platform_device *pdev)
 		if (pdata->manufacturer_name)
 			strings_dev[STRING_MANUFACTURER_IDX].s =
 					pdata->manufacturer_name;
-		if (pdata->serial_number)
+		if (pdata->serial_number){
 			strings_dev[STRING_SERIAL_IDX].s = pdata->serial_number;
+			USB_SN_String = pdata->serial_number;
+		}
 	}
+
+	desc_interface_name = kzalloc(sizeof(char), GFP_KERNEL);
 
 	return usb_composite_register(&android_usb_driver);
 }
@@ -520,6 +563,7 @@ module_init(init);
 
 static void __exit cleanup(void)
 {
+	kfree(desc_interface_name);
 	usb_composite_unregister(&android_usb_driver);
 	platform_driver_unregister(&android_platform_driver);
 	kfree(_android_dev);

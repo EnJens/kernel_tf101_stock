@@ -46,6 +46,8 @@
 
 #define HDMI_REKEY_DEFAULT		56
 
+int hdmi_resolution;
+
 struct tegra_dc_hdmi_data {
 	struct tegra_dc			*dc;
 	struct tegra_edid		*edid;
@@ -183,7 +185,6 @@ struct tdms_config {
 	u32 drive_current;
 };
 
-#ifdef CONFIG_ARCH_TEGRA_2x_SOC
 const struct tdms_config tdms_config[] = {
 	{ /* 480p modes */
 	.pclk = 27000000,
@@ -228,7 +229,6 @@ const struct tdms_config tdms_config[] = {
 		DRIVE_CURRENT_LANE3(DRIVE_CURRENT_7_125_mA),
 	},
 };
-#endif
 
 struct tegra_hdmi_audio_config {
 	unsigned pix_clock;
@@ -499,8 +499,8 @@ static bool tegra_dc_hdmi_mode_equal(const struct fb_videomode *mode1,
 	/* allows up to 1Hz of pixclock difference */
 	return mode1->xres	== mode2->xres &&
 		mode1->yres	== mode2->yres &&
-		(abs(PICOS2KHZ(mode1->pixclock - mode2->pixclock)) *
-		1000 / clock_per_frame <= 1) &&
+	/*	(abs(PICOS2KHZ(mode1->pixclock - mode2->pixclock)) *
+		1000 / clock_per_frame <= 1) && */
 		mode1->vmode	== mode2->vmode;
 }
 
@@ -1068,6 +1068,8 @@ static void tegra_dc_hdmi_enable(struct tegra_dc *dc)
 	struct tegra_dc_hdmi_data *hdmi = tegra_dc_get_outdata(dc);
 	int pulse_start;
 	int dispclk_div_8_2;
+	int pll0;
+	int pll1;
 	int retries;
 	int rekey;
 	int err;
@@ -1170,6 +1172,70 @@ static void tegra_dc_hdmi_enable(struct tegra_dc *dc)
 		}
 	}
 
+	pll0 = 0x200033f;
+	pll1 = 0;
+
+	pll0 &= ~SOR_PLL_PWR & ~SOR_PLL_VCOPD & ~SOR_PLL_PDBG & ~SOR_PLL_PDPORT & ~SOR_PLL_PULLDOWN &
+		~SOR_PLL_VCOCAP(~0) & ~SOR_PLL_ICHPMP(~0);
+	pll0 |= SOR_PLL_RESISTORSEL;
+
+	if (dc->mode.pclk <= 27000000)
+		pll0 |= SOR_PLL_VCOCAP(0);
+	else if (dc->mode.pclk <= 74250000)
+		pll0 |= SOR_PLL_VCOCAP(1);
+	else
+		pll0 |= SOR_PLL_VCOCAP(3);
+
+	if (dc->mode.h_active == 1080) {
+		pll0 |= SOR_PLL_ICHPMP(1) | SOR_PLL_TX_REG_LOAD(3) |
+			SOR_PLL_TX_REG_LOAD(3) | SOR_PLL_BG_V17_S(3);
+		pll1 |= SOR_PLL_TMDS_TERM_ENABLE | SOR_PLL_PE_EN;
+	} else {
+		pll0 |= SOR_PLL_ICHPMP(2);
+	}
+
+	switch(hdmi_resolution) {
+	case HDMI_ACTIVE_1920_1080:
+		tegra_hdmi_writel(hdmi, 0x31003310, HDMI_NV_PDISP_SOR_PLL0);
+		tegra_hdmi_writel(hdmi, 0x10000100, HDMI_NV_PDISP_SOR_PLL1);
+		tegra_hdmi_writel(hdmi,
+				  PE_CURRENT0(0xF) |
+				  PE_CURRENT1(0xF) |
+				  PE_CURRENT2(0xF) |
+				  PE_CURRENT3(0xF),
+				  HDMI_NV_PDISP_PE_CURRENT);
+		tegra_hdmi_writel(hdmi,
+			  DRIVE_CURRENT_LANE0(0xF) |
+			  DRIVE_CURRENT_LANE1(0xF) |
+			  DRIVE_CURRENT_LANE2(0xF) |
+			  DRIVE_CURRENT_LANE3(0xF) |
+			  DRIVE_CURRENT_FUSE_OVERRIDE,
+			  HDMI_NV_PDISP_SOR_LANE_DRIVE_CURRENT);
+		break;
+
+	case HDMI_ACTIVE_1280_720:
+		tegra_hdmi_writel(hdmi, pll0, HDMI_NV_PDISP_SOR_PLL0);
+		tegra_hdmi_writel(hdmi, pll1, HDMI_NV_PDISP_SOR_PLL1);
+		tegra_hdmi_writel(hdmi,
+				  PE_CURRENT0(0x0) |
+				  PE_CURRENT1(0x0) |
+				  PE_CURRENT2(0x0) |
+				  PE_CURRENT3(0x0),
+				  HDMI_NV_PDISP_PE_CURRENT);
+		tegra_hdmi_writel(hdmi,
+			  DRIVE_CURRENT_LANE0(0xA) |
+			  DRIVE_CURRENT_LANE1(0xA) |
+			  DRIVE_CURRENT_LANE2(0xA) |
+			  DRIVE_CURRENT_LANE3(0xA) |
+			  DRIVE_CURRENT_FUSE_OVERRIDE,
+			  HDMI_NV_PDISP_SOR_LANE_DRIVE_CURRENT);
+		break;
+
+	case HDMI_ACTIVE_NONE:
+	default:
+		break;
+	}
+
 	tegra_hdmi_writel(hdmi,
 			  SOR_SEQ_CTL_PU_PC(0) |
 			  SOR_SEQ_PU_PC_ALT(0) |
@@ -1255,7 +1321,38 @@ static void tegra_dc_hdmi_enable(struct tegra_dc *dc)
 	tegra_dc_writel(dc, GENERAL_ACT_REQ << 8, DC_CMD_STATE_CONTROL);
 	tegra_dc_writel(dc, GENERAL_ACT_REQ, DC_CMD_STATE_CONTROL);
 
-	tegra_nvhdcp_set_plug(hdmi->nvhdcp, 1);
+	if(gpio_get_value(dc->out->hotplug_gpio)) {
+		printk("HDMI is connected. Set HDCP.\n");
+		tegra_nvhdcp_set_plug(hdmi->nvhdcp, 1);
+	} else {
+		printk("HDMI is removed?\n");
+		tegra_nvhdcp_set_plug(hdmi->nvhdcp, 0);
+	}
+
+	switch(hdmi_resolution) {
+	case HDMI_ACTIVE_1920_1080:
+		tegra_hdmi_writel(hdmi, 0x0, HDMI_NV_PDISP_HDMI_AVI_INFOFRAME_STATUS);
+		tegra_hdmi_writel(hdmi, 0x00280037, HDMI_NV_PDISP_HDMI_AVI_INFOFRAME_SUBPACK0_LOW);
+		tegra_hdmi_writel(hdmi, 0x00000010, HDMI_NV_PDISP_HDMI_AVI_INFOFRAME_SUBPACK0_HIGH);
+		tegra_hdmi_writel(hdmi, 0x0000f000, HDMI_NV_PDISP_HDMI_EMU0);
+		tegra_hdmi_writel(hdmi, 0x00002600, HDMI_NV_PDISP_HDMI_EMU1);
+		tegra_hdmi_writel(hdmi, 0x10000001, HDMI_NV_PDISP_SOR_PWR);
+		tegra_hdmi_writel(hdmi, 0x00800400, HDMI_NV_PDISP_SOR_TEST);
+		tegra_hdmi_writel(hdmi, 0x43173803, HDMI_NV_PDISP_SOR_VCRCA0);
+		tegra_hdmi_writel(hdmi, 0x0000e357, HDMI_NV_PDISP_SOR_VCRCA1);
+		tegra_hdmi_writel(hdmi, 0x80000000, HDMI_NV_PDISP_SOR_MSCHECK);
+		break;
+
+	case HDMI_ACTIVE_1280_720:
+	default:
+		break;
+	}
+
+#ifdef DEBUG
+	if((hdmi != NULL) && (hdmi->base != NULL))
+		hdmi_dumpregs(hdmi);
+#endif
+
 }
 
 static void tegra_dc_hdmi_disable(struct tegra_dc *dc)

@@ -51,17 +51,17 @@ static DEFINE_MUTEX(tegra_cpu_lock);
 static bool is_suspended;
 
 unsigned int tegra_getspeed(unsigned int cpu);
-static int tegra_update_cpu_speed(unsigned long rate);
+int tegra_update_cpu_speed(unsigned long rate);
 static unsigned long tegra_cpu_highest_speed(void);
 
 #ifdef CONFIG_TEGRA_THERMAL_THROTTLE
 /* CPU frequency is gradually lowered when throttling is enabled */
 #define THROTTLE_DELAY		msecs_to_jiffies(2000)
 
-static bool is_throttling;
+bool is_throttling;
 static int throttle_lowest_index;
 static int throttle_highest_index;
-static int throttle_index;
+int throttle_index;
 static int throttle_next_index;
 static struct delayed_work throttle_work;
 static struct workqueue_struct *workqueue;
@@ -203,7 +203,7 @@ unsigned int tegra_getspeed(unsigned int cpu)
 	return rate;
 }
 
-static int tegra_update_cpu_speed(unsigned long rate)
+int tegra_update_cpu_speed(unsigned long rate)
 {
 	int ret = 0;
 	struct cpufreq_freqs freqs;
@@ -249,7 +249,7 @@ static int tegra_update_cpu_speed(unsigned long rate)
 
 	return 0;
 }
-
+EXPORT_SYMBOL(tegra_update_cpu_speed);
 static unsigned long tegra_cpu_highest_speed(void) {
 	unsigned long rate = 0;
 	int i;
@@ -309,7 +309,6 @@ static int tegra_pm_notify(struct notifier_block *nb, unsigned long event,
 static struct notifier_block tegra_cpu_pm_notifier = {
 	.notifier_call = tegra_pm_notify,
 };
-
 static int tegra_cpu_init(struct cpufreq_policy *policy)
 {
 	if (policy->cpu >= NUM_CPUS)

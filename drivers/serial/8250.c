@@ -39,6 +39,7 @@
 #include <linux/nmi.h>
 #include <linux/mutex.h>
 #include <linux/slab.h>
+#include <mach/board-ventana-misc.h>
 
 #include <asm/io.h>
 #include <asm/irq.h>
@@ -1458,8 +1459,8 @@ receive_chars(struct uart_8250_port *up, unsigned int *status)
 			else if (lsr & UART_LSR_FE)
 				flag = TTY_FRAME;
 		}
-		if (uart_handle_sysrq_char(&up->port, ch))
-			goto ignore_char;
+		//if (uart_handle_sysrq_char(&up->port, ch))
+		//	goto ignore_char;
 
 		uart_insert_char(&up->port, lsr, UART_LSR_OE, ch, flag);
 
@@ -3228,6 +3229,10 @@ void serial8250_unregister_port(int line)
 {
 	struct uart_8250_port *uart = &serial8250_ports[line];
 
+	//WARN: Add a workaround for ISR release on specific IRQ
+	if (ASUSGetProjectID() == 103)
+		serial8250_shutdown((struct uart_port *)uart);
+
 	mutex_lock(&serial_mutex);
 	uart_remove_one_port(&serial8250_reg, &uart->port);
 	if (serial8250_isa_devs) {
@@ -3241,6 +3246,12 @@ void serial8250_unregister_port(int line)
 	mutex_unlock(&serial_mutex);
 }
 EXPORT_SYMBOL(serial8250_unregister_port);
+
+void serial8250_console_unregister(void)
+{
+	unregister_console(&serial8250_console);
+}
+EXPORT_SYMBOL(serial8250_console_unregister);
 
 static int __init serial8250_init(void)
 {

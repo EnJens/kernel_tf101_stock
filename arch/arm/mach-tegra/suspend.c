@@ -603,6 +603,14 @@ static void tegra_debug_uart_resume(void)
 #define MC_SECURITY_SIZE	0x70
 #define MC_SECURITY_CFG2	0x7c
 
+unsigned long wake_status=0;
+unsigned long temp_wake_status=0;
+unsigned long sd_wake_status=0;
+extern struct timer_list suspend_timer;
+extern void suspend_worker_timeout(unsigned long data);
+extern void watchdog_enable(int sec);
+extern void watchdog_disable(void);
+extern void auto_dump_kernel_log(void);
 #define AHB_ARBITRATION_DISABLE		0x00
 #define AHB_ARBITRATION_PRIORITY_CTRL	0x04
 #define AHB_GIZMO_AHB_MEM		0x0c
@@ -710,7 +718,6 @@ void tegra_ahbgizmo_resume(void)
 	gizmo_writel(ahb_gizmo[27],AHB_MEM_PREFETCH_CFG2);
 	gizmo_writel(ahb_gizmo[28],AHB_ARBITRATION_AHB_MEM_WRQUE_MST_ID);
 }
-
 static int tegra_suspend_enter(suspend_state_t state)
 {
 	struct irq_desc *desc;
@@ -737,6 +744,11 @@ static int tegra_suspend_enter(suspend_state_t state)
 	local_irq_save(flags);
 	local_fiq_disable();
 
+        if(lp_state==0){
+		watchdog_disable();
+		del_timer_sync(&suspend_timer);
+		destroy_timer_on_stack(&suspend_timer);
+        }
 	pr_info("Entering suspend state LP%d\n", lp_state);
 	if (do_lp0) {
 		tegra_irq_suspend();
@@ -803,11 +815,23 @@ static int tegra_suspend_enter(suspend_state_t state)
 	ms = do_div(secs, 1000);
 	pr_info("Suspended for %llu.%03u seconds\n", secs, ms);
 
+	 wake_status = readl(pmc + PMC_WAKE_STATUS);
+	sd_wake_status = readl(pmc + PMC_WAKE_STATUS);
+	 temp_wake_status=wake_status;
+	   printk("exit suspend: wake_source=%x\n",wake_status );
+
 	tegra_time_in_suspend[time_to_bin(secs)]++;
 
 	local_fiq_enable();
 	local_irq_restore(flags);
-
+        if(lp_state==0){
+		init_timer_on_stack(&suspend_timer);
+		suspend_timer.expires = jiffies + HZ * 8;
+		suspend_timer.function = suspend_worker_timeout;
+		add_timer(&suspend_timer);
+		watchdog_enable(10);
+                auto_dump_kernel_log();
+     }
 	return 0;
 }
 

@@ -89,7 +89,7 @@ static struct regulator_consumer_supply tps658621_ldo5_supply[] = {
 static struct regulator_consumer_supply tps658621_ldo6_supply[] = {
 	REGULATOR_SUPPLY("vdd_ldo6", NULL),
 	REGULATOR_SUPPLY("vcsi", "tegra_camera"),
-	REGULATOR_SUPPLY("vmic", "soc-audio"),
+	REGULATOR_SUPPLY("vcsi", NULL),
 };
 static struct regulator_consumer_supply tps658621_ldo7_supply[] = {
 	REGULATOR_SUPPLY("vdd_ldo7", NULL),
@@ -188,10 +188,10 @@ static struct tps6586x_subdev_info tps_devs[] = {
 };
 
 static struct tps6586x_platform_data tps_platform = {
-	.irq_base = TPS6586X_INT_BASE,
+	.irq_base = TEGRA_NR_IRQS,
 	.num_subdevs = ARRAY_SIZE(tps_devs),
 	.subdevs = tps_devs,
-	.gpio_base = TPS6586X_GPIO_BASE,
+	.gpio_base = TEGRA_NR_GPIOS,
 };
 
 static struct i2c_board_info __initdata ventana_regulators[] = {
@@ -215,10 +215,10 @@ static struct tegra_suspend_platform_data ventana_suspend_data = {
 	.separate_req	= true,
 	.corereq_high	= false,
 	.sysclkreq_high	= true,
-	.wake_enb	= TEGRA_WAKE_GPIO_PV2 | TEGRA_WAKE_GPIO_PY6,
+	.wake_enb	= TEGRA_WAKE_GPIO_PV2 | TEGRA_WAKE_GPIO_PY6 | TEGRA_WAKE_GPIO_PI5 | TEGRA_WAKE_GPIO_PS2 | TEGRA_WAKE_GPIO_PW3 | TEGRA_WAKE_GPIO_PS4 | TEGRA_WAKE_GPIO_PN7,
 	.wake_high	= 0,
-	.wake_low	= TEGRA_WAKE_GPIO_PV2 | TEGRA_WAKE_GPIO_PY6,
-	.wake_any	= 0,
+	.wake_low	= TEGRA_WAKE_GPIO_PV2 | TEGRA_WAKE_GPIO_PY6 | TEGRA_WAKE_GPIO_PS2,
+	.wake_any	= TEGRA_WAKE_GPIO_PI5 | TEGRA_WAKE_GPIO_PW3 | TEGRA_WAKE_GPIO_PW2 | TEGRA_WAKE_GPIO_PS4 | TEGRA_WAKE_GPIO_PN7,
 };
 
 int __init ventana_regulator_init(void)
@@ -240,7 +240,7 @@ int __init ventana_regulator_init(void)
 
 	i2c_register_board_info(4, ventana_regulators, 1);
 
-	regulator_has_full_constraints();
+	//regulator_has_full_constraints();
 
 	tegra_init_suspend(&ventana_suspend_data);
 

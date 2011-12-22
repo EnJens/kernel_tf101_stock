@@ -128,6 +128,16 @@ config TEGRA_THERMAL_THROTTLE
        help
          Also requires enabling a temperature sensor such as NCT1008.
 
+config ASUSEC
+        bool "ASUS embedded controller interface"
+        depends on I2C
+
+config DEBUG_ASUS
+	bool "For ASUS user-debug build"
+	depends on ARCH_TEGRA_2x_SOC
+	help
+	  Say Y here for user-debug build.
+
 config TEGRA_CLOCK_DEBUG_WRITE
 	bool "Enable debugfs write access to clock tree"
 	depends on DEBUG_FS

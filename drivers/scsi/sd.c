@@ -51,6 +51,7 @@
 #include <linux/string_helpers.h>
 #include <linux/async.h>
 #include <linux/slab.h>
+#include <linux/wakelock.h>
 #include <asm/uaccess.h>
 #include <asm/unaligned.h>
 
@@ -2291,6 +2292,8 @@ static void sd_probe_async(void *data, async_cookie_t cookie)
 	put_device(&sdkp->dev);
 }
 
+static struct wake_lock sd_wake_lock;
+
 /**
  *	sd_probe - called during driver initialization and whenever a
  *	new scsi device is attached to the system. It is called once
@@ -2316,6 +2319,9 @@ static int sd_probe(struct device *dev)
 	struct gendisk *gd;
 	int index;
 	int error;
+
+	printk("sd_probe(): Hold the wake lock for 1 second to make sure this work can be finished in time.\n");
+	wake_lock_timeout(&sd_wake_lock, 1 * HZ);
 
 	error = -ENODEV;
 	if (sdp->type != TYPE_DISK && sdp->type != TYPE_MOD && sdp->type != TYPE_RBC)
@@ -2589,6 +2595,8 @@ static int __init init_sd(void)
 		printk(KERN_ERR "sd: can't init extended cdb pool\n");
 		goto err_out_cache;
 	}
+
+	wake_lock_init(&sd_wake_lock, WAKE_LOCK_SUSPEND, "scsi_sd_wake_lock");
 
 	return 0;
 

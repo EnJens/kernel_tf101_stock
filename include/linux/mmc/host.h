@@ -15,6 +15,11 @@
 
 #include <linux/mmc/core.h>
 #include <linux/mmc/pm.h>
+#include <linux/wakelock.h>
+
+#define SDHOST_STRING "mmc1"  //sdcard host 
+#define EN_VDDIO_SD 70
+#define SD_CARD_DETECT 69
 
 struct mmc_ios {
 	unsigned int	clock;			/* clock rate */
@@ -198,6 +203,7 @@ struct mmc_host {
 	struct task_struct	*claimer;	/* task that has host claimed */
 	int			claim_cnt;	/* "claim" nesting count */
 
+	struct wake_lock	mmc_sdio_irq_wake_lock;
 	struct delayed_work	detect;
 
 	const struct mmc_bus_ops *bus_ops;	/* current bus driver */
@@ -229,6 +235,8 @@ struct mmc_host {
 #endif
 
 	unsigned long		private[0] ____cacheline_aligned;
+
+	u32			opcode;
 };
 
 extern struct mmc_host *mmc_alloc_host(int extra, struct device *);

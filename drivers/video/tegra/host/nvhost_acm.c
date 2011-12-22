@@ -218,15 +218,17 @@ static void debug_not_idle(struct nvhost_module *mod)
 		printk("tegra_grhost: all locks released\n");
 }
 
-void nvhost_module_suspend(struct nvhost_module *mod, bool system_suspend)
+bool nvhost_module_suspend(struct nvhost_module *mod, bool system_suspend)
 {
 	int ret;
+
+	printk("nvhost_module_suspend()+\n");
 
 	if (system_suspend && (!is_module_idle(mod)))
 		debug_not_idle(mod);
 
 	ret = wait_event_timeout(mod->idle, is_module_idle(mod),
-			   ACM_TIMEOUT + msecs_to_jiffies(500));
+			   ACM_TIMEOUT + msecs_to_jiffies(1000));
 	if (ret == 0)
 		nvhost_debug_dump();
 
@@ -236,7 +238,18 @@ void nvhost_module_suspend(struct nvhost_module *mod, bool system_suspend)
 	flush_delayed_work(&mod->powerdown);
 	if (system_suspend)
 		printk("tegra_grhost: flushed delayed work\n");
-	BUG_ON(mod->powered);
+
+	if(mod->powered) {
+		/* Suspend fail. */
+		printk("nvhost_module_suspend()-: %s, refcount= %d\n", mod->name, mod->refcount);
+		// BUG_ON(mod->powered);
+		return false;
+	} else {
+		/* Suspend success. */
+		printk("nvhost_module_suspend()-\n");
+		return true;
+	}
+
 }
 
 void nvhost_module_deinit(struct nvhost_module *mod)

@@ -116,6 +116,20 @@ static struct usb_descriptor_header *hs_adb_descs[] = {
 	NULL,
 };
 
+static struct usb_string adb_string_defs[] = {
+	[0].s	= "ASUS Android Composite ADB Interface",
+	{  },	/* end of list */
+};
+
+static struct usb_gadget_strings adb_string_table = {
+	.language		= 0x0409,	/* en-US */
+	.strings		= adb_string_defs,
+};
+
+static struct usb_gadget_strings *adb_strings[] = {
+	&adb_string_table,
+	NULL,
+};
 
 /* temporary variable used between adb_open() and adb_gadget_bind() */
 static struct adb_dev *_adb_dev;
@@ -624,6 +638,15 @@ static int adb_bind_config(struct usb_configuration *c)
 	if (!dev)
 		return -ENOMEM;
 
+	/* allocate a string ID for our interface */
+	if (adb_string_defs[0].id == 0) {
+		ret = usb_string_id(c->cdev);
+		if (ret < 0)
+			return ret;
+		adb_string_defs[0].id = ret;
+		adb_interface_desc.iInterface = ret;
+	}
+
 	spin_lock_init(&dev->lock);
 
 	init_waitqueue_head(&dev->read_wq);
@@ -637,6 +660,7 @@ static int adb_bind_config(struct usb_configuration *c)
 
 	dev->cdev = c->cdev;
 	dev->function.name = "adb";
+	dev->function.strings = adb_strings,
 	dev->function.descriptors = fs_adb_descs;
 	dev->function.hs_descriptors = hs_adb_descs;
 	dev->function.bind = adb_function_bind;

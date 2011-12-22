@@ -1313,6 +1313,12 @@ UNUSUAL_DEV( 0x0dd8, 0xd202, 0x0000, 0x9999,
 		US_SC_DEVICE, US_PR_DEVICE, NULL,
 		US_FL_IGNORE_RESIDUE ),
 
+/* add ChipsBnk devices information by yi-hsin for sda1 partition don't appear */
+UNUSUAL_DEV(  0x1e3d, 0x4082, 0x0000, 0x9999,
+		"ChipsBnk",
+		"Flash Disk",
+		US_SC_DEVICE, US_PR_DEVICE, NULL,
+		US_FL_IGNORE_RESIDUE ),
 
 /* Patch by Stephan Walter <stephan.walter@epfl.ch>
  * I don't know why, but it works... */
@@ -1812,6 +1818,11 @@ UNUSUAL_DEV(  0x12d1, 0x143F, 0x0000, 0x0000,
 		"Mass Storage",
 		US_SC_DEVICE, US_PR_DEVICE, usb_stor_huawei_e220_init,
 		0),
+UNUSUAL_DEV(  0x12d1, 0x1446, 0x0000, 0x0000,
+               "HUAWEI MOBILE",
+               "Mass Storage",
+               US_SC_DEVICE, US_PR_DEVICE, usb_stor_huawei_e220_init,
+               0),
 
 UNUSUAL_DEV(  0x12d1, 0x1446, 0x0000, 0x0000,
 		"HUAWEI MOBILE",

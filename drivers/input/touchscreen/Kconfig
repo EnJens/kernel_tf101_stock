@@ -390,6 +390,12 @@ config TOUCHSCREEN_ATMEL_MT_T9
 	  To compile this driver as a module, choose M here: the
 	  module will be called atmel_tsadcc.
 
+config TOUCHSCREEN_ATMEL_MT_T9_EP102
+	tristate "Atmel Touchscreen Interface"
+	depends on I2C
+	help
+	  To compile this driver as a module, choose M here: the
+	  module will be called atmel_tsadcc.
 config TOUCHSCREEN_UCB1400
 	tristate "Philips UCB1400 touchscreen"
 	depends on AC97_BUS
@@ -664,4 +670,18 @@ config TOUCHSCREEN_STMPE
 	  To compile this driver as a module, choose M here: the
 	  module will be called stmpe-ts.
 
+config TOUCHSCREEN_CYTTSP_I2C
+	tristate "Cypress touchscreen i2c driver"
+	help
+	  Say Y here if you have a Cypress based touchscreen.
+	  This is the i2c version of the driver.
+
+	  To compile this driver as a module, choose M here.
+config TOUCHSCREEN_EETI_UART
+	tristate "EETI touchscreen UART driver"
+	help
+	  Say Y here if you have a Cypress based touchscreen.
+	  This is the i2c version of the driver.
+
+	  To compile this driver as a module, choose M here.
 endif

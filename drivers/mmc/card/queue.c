@@ -20,6 +20,7 @@
 #include <linux/mmc/host.h>
 #include "queue.h"
 
+#include "../debug_mmc.h"
 #define MMC_QUEUE_BOUNCESZ	65536
 
 #define MMC_QUEUE_SUSPENDED	(1 << 0)
@@ -72,7 +73,7 @@ static int mmc_queue_thread(void *d)
 		}
 		set_current_state(TASK_RUNNING);
 
-		mq->issue_fn(mq, req);
+              mq->issue_fn(mq, req);
 	} while (1);
 	up(&mq->thread_sem);
 

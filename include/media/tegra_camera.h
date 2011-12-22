@@ -36,3 +36,5 @@ struct tegra_camera_clk_info {
 #define TEGRA_CAMERA_IOCTL_CLK_SET_RATE		\
 	_IOWR('i', 3, struct tegra_camera_clk_info)
 #define TEGRA_CAMERA_IOCTL_RESET		_IOWR('i', 4, uint)
+#define TEGRA_CAMERA_IOCTL_CAMINFO		_IOWR('i', 40, uint)
+

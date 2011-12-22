@@ -51,6 +51,7 @@
 #include <trace/events/ext4.h>
 
 struct proc_dir_entry *ext4_proc_root;
+int ventana_ext4_invalid = 0;
 static struct kset *ext4_kset;
 
 static int ext4_load_journal(struct super_block *, struct ext4_super_block *,
@@ -2625,7 +2626,14 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
 	sbi->s_es = es;
 	sb->s_magic = le16_to_cpu(es->s_magic);
 	if (sb->s_magic != EXT4_SUPER_MAGIC)
+	{
+		ext4_msg(sb, KERN_ERR, "VFS: sb->s_magic %x", sb->s_magic);
+                if(sb->s_magic == 0xffff || sb->s_magic == 0){
+			ext4_msg(sb, KERN_ERR, "magic is 0xffff");
+			ventana_ext4_invalid = 1;
+		}
 		goto cantfind_ext4;
+	}
 	sbi->s_kbytes_written = le64_to_cpu(es->s_kbytes_written);
 
 	/* Set defaults before we parse the mount options */
@@ -2786,11 +2794,16 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
 	sbi->s_blocks_per_group = le32_to_cpu(es->s_blocks_per_group);
 	sbi->s_inodes_per_group = le32_to_cpu(es->s_inodes_per_group);
 	if (EXT4_INODE_SIZE(sb) == 0 || EXT4_INODES_PER_GROUP(sb) == 0)
+	{
+		ext4_msg(sb, KERN_ERR, "VFS: EXT4_INODE_SIZE(sb) %d, EXT4_INODES_PER_GROUP(sb) %ul", EXT4_INODE_SIZE(sb), EXT4_INODES_PER_GROUP(sb));
 		goto cantfind_ext4;
-
+	}
 	sbi->s_inodes_per_block = blocksize / EXT4_INODE_SIZE(sb);
 	if (sbi->s_inodes_per_block == 0)
+	{
+		ext4_msg(sb, KERN_ERR, "VFS: sbi->s_inodes_per_block %ul", sbi->s_inodes_per_block);
 		goto cantfind_ext4;
+	}
 	sbi->s_itb_per_group = sbi->s_inodes_per_group /
 					sbi->s_inodes_per_block;
 	sbi->s_desc_per_block = blocksize / EXT4_DESC_SIZE(sb);
@@ -2845,8 +2858,10 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
 	}
 
 	if (EXT4_BLOCKS_PER_GROUP(sb) == 0)
+	{
+		ext4_msg(sb, KERN_ERR, "VFS: EXT4_BLOCKS_PER_GROUP(sb) %ul", EXT4_BLOCKS_PER_GROUP(sb));
 		goto cantfind_ext4;
-
+	}
 	/* check blocks count against device size */
 	blocks_count = sb->s_bdev->bd_inode->i_size >> sb->s_blocksize_bits;
 	if (blocks_count && ext4_blocks_count(es) > blocks_count) {

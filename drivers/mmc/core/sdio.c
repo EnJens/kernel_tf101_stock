@@ -24,6 +24,7 @@
 #include "sd_ops.h"
 #include "sdio_ops.h"
 #include "sdio_cis.h"
+#include <mach/board-ventana-misc.h>
 
 #ifdef CONFIG_MMC_EMBEDDED_SDIO
 #include <linux/mmc/sdio_ids.h>
@@ -308,6 +309,7 @@ static unsigned mmc_sdio_get_max_clock(struct mmc_card *card)
 {
 	unsigned max_dtr;
 
+#if 0
 	if (mmc_card_highspeed(card)) {
 		/*
 		 * The SDIO specification doesn't mention how
@@ -318,6 +320,35 @@ static unsigned mmc_sdio_get_max_clock(struct mmc_card *card)
 		max_dtr = 50000000;
 	} else {
 		max_dtr = card->cis.max_dtr;
+	}
+#endif
+
+	switch (ASUSGetProjectID()) {
+
+	case 102:
+		max_dtr = 45000000;
+		printk("Set SDIO clock to 45MHz\n");
+		break;
+
+	case 101:
+		max_dtr = 40000000;
+                printk("Set SDIO clock to 40MHz\n");
+                break;
+	case 103:
+	default:
+		if (mmc_card_highspeed(card)) {
+		/*
+		 * The SDIO specification doesn't mention how
+		 * the CIS transfer speed register relates to
+		 * high-speed, but it seems that 50 MHz is
+		 * mandatory.
+		 */
+			max_dtr = 50000000;
+		} else {
+			max_dtr = card->cis.max_dtr;
+		}
+		printk("Set SDIO clock to 50MHz\n");
+
 	}
 
 	if (card->type == MMC_TYPE_SD_COMBO)

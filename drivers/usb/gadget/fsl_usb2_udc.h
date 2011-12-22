@@ -4,6 +4,9 @@
 #ifndef __FSL_USB2_UDC_H
 #define __FSL_USB2_UDC_H
 
+//add by yi-hsin for AC and USB cable insert wake lock
+#include <linux/wakelock.h>
+
 /* ### define USB registers here
  */
 #define USB_MAX_CTRL_PAYLOAD		64
@@ -512,6 +515,8 @@ struct fsl_udc {
 	u32 ep0_dir;		/* Endpoint zero direction: can be
 				   USB_DIR_IN or USB_DIR_OUT */
 	u8 device_address;	/* Device USB address */
+	//add by yi-hsin for AC and USB cable insert wake lock
+	struct wake_lock wake_lock;
 };
 
 /*-------------------------------------------------------------------------*/

@@ -136,6 +136,10 @@ config ARCH_HAS_CPU_IDLE_WAIT
 	bool
 	default y
 
+config ASUS_CHARGER_MODE
+	bool
+	default y
+
 config ARCH_HAS_DEFAULT_IDLE
 	bool
 	default y

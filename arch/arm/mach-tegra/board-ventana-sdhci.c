@@ -31,7 +31,8 @@
 #include "gpio-names.h"
 #include "board.h"
 
-#define VENTANA_WLAN_PWR	TEGRA_GPIO_PK5
+/* This gpio is defined as another alternative function. It isn't used by Wifi anymore. */
+/*#define VENTANA_WLAN_PWR	TEGRA_GPIO_PK5*/
 #define VENTANA_WLAN_RST	TEGRA_GPIO_PK6
 
 static void (*wifi_status_cb)(int card_present, void *dev_id);
@@ -189,8 +190,8 @@ static int ventana_wifi_power(int on)
 {
 	pr_debug("%s: %d\n", __func__, on);
 
-	gpio_set_value(VENTANA_WLAN_PWR, on);
-	mdelay(100);
+	/*gpio_set_value(VENTANA_WLAN_PWR, on);
+	mdelay(100);*/
 	gpio_set_value(VENTANA_WLAN_RST, on);
 	mdelay(200);
 
@@ -216,13 +217,13 @@ static int __init ventana_wifi_init(void)
 		return PTR_ERR(wifi_32k_clk);
 	}
 
-	gpio_request(VENTANA_WLAN_PWR, "wlan_power");
+	/*gpio_request(VENTANA_WLAN_PWR, "wlan_power");*/
 	gpio_request(VENTANA_WLAN_RST, "wlan_rst");
 
-	tegra_gpio_enable(VENTANA_WLAN_PWR);
+	/*tegra_gpio_enable(VENTANA_WLAN_PWR);*/
 	tegra_gpio_enable(VENTANA_WLAN_RST);
 
-	gpio_direction_output(VENTANA_WLAN_PWR, 0);
+	/*gpio_direction_output(VENTANA_WLAN_PWR, 0);*/
 	gpio_direction_output(VENTANA_WLAN_RST, 0);
 
 	platform_device_register(&ventana_wifi_device);

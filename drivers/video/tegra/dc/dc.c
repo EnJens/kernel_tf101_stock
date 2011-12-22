@@ -37,12 +37,41 @@
 #include <mach/fb.h>
 #include <mach/mc.h>
 #include <mach/nvhost.h>
+#include <mach/board-ventana-misc.h>
 
 #include "dc_reg.h"
 #include "dc_priv.h"
 #include "overlay.h"
 
+#include "hdmi_reg.h"
+#include "hdmi.h"
+
+#include <linux/gpio.h>
+
+/* LVDS_SHTDN_N, GPIO_PB2*/
+#define ventana_lvds_shutdown	10
+/* EN_VDD_PNL, GPIO_PC6 */
+#define ventana_pnl_pwr_enb	22
+/* LCD_BL_EN, GPIO_PD4 */
+#define ventana_bl_enb		28
+
 static int no_vsync;
+static struct timeval t_suspend;
+bool b_dc0_enabled;
+static bool b_dc0_probe_stage = true;
+static unsigned int asus_project_id=-1;
+extern int battery_charger_callback(unsigned int enable);
+/*extern  int mxt_enable(void);
+extern  int mxt_disable(void);
+extern  int egalax_enable(void);
+extern  int egalax_disable(void);
+extern  int mxt_enable_ep102(void);
+extern  int mxt_disable_ep102(void);
+extern  unsigned int ASUSGetProjectID(void);
+static int (*touch_enable_fp[3])(void) = {mxt_enable, mxt_enable_ep102, egalax_enable};
+static int (*touch_disable_fp[3])(void) = {mxt_disable, mxt_disable_ep102, egalax_disable};*/
+
+extern void ForceSetBrightness(int);
 
 module_param_named(no_vsync, no_vsync, int, S_IRUGO | S_IWUSR);
 
@@ -316,12 +345,135 @@ static const struct file_operations dbg_fops = {
 	.release	= single_release,
 };
 
+#include <linux/uaccess.h>
+
+#define DUMP_HDMI_REG(a) do {	\
+		len = snprintf(bp, dlen, "%-47s   0x%03x  0x%08lx\n",	\
+			#a, a, tegra_hdmi_readl(hdmi, a));		\
+	} while (0)
+
+static ssize_t dbg_hdmi_reg_rw_open(struct inode *inode, struct file *file)
+{
+	file->private_data = inode->i_private;
+	return 0;
+}
+
+static ssize_t dbg_hdmi_reg_rw_read(struct file *file, char __user *buf, size_t count,
+				loff_t *ppos)
+{
+	int len = 0;
+	int tot = 0;
+	char debug_buf[256];
+	int dlen = sizeof(debug_buf);
+	char *bp = debug_buf;
+
+	struct tegra_dc_hdmi_data *hdmi = tegra_dc_get_outdata(tegra_dcs[1]);
+
+	printk("%s: buf=%p, count=%d, ppos=%p; *ppos= %d\n", __FUNCTION__, buf, count, ppos, *ppos);
+
+	if (*ppos)
+		return 0;	/* the end */
+
+	if (gpio_get_value(tegra_dcs[1]->out->hotplug_gpio) && (tegra_dcs[1]->enabled == true)){
+		/* dump_reg */
+		len = snprintf(bp, dlen, "%-47s  %s  %10s\n", "HDMI register name", "Offset", "Value");
+		tot += len; bp += len; dlen -= len;
+		DUMP_HDMI_REG(HDMI_NV_PDISP_SOR_LANE_DRIVE_CURRENT);
+		tot += len; bp += len; dlen -= len;
+		DUMP_HDMI_REG(HDMI_NV_PDISP_PE_CURRENT);
+		tot += len; bp += len; dlen -= len;
+	} else {
+		/* Don't dump HDMI registers. Show warnning */
+		len = snprintf(bp, dlen, "No hdmi device? DC is disabled? Do nothing.\n");
+		tot += len; bp += len; dlen -= len;
+	}
+
+	if (copy_to_user(buf, debug_buf, tot))
+		return -EFAULT;
+	if (tot < 0)
+		return 0;
+	*ppos += tot;	/* increase offset */
+	return tot;
+}
+static ssize_t dbg_hdmi_reg_rw_write(struct file *file, char __user *buf, size_t count,
+				loff_t *ppos)
+{
+	char debug_buf[256];
+	int cnt;
+	struct tegra_dc_hdmi_data *hdmi = tegra_dc_get_outdata(tegra_dcs[1]);
+	char ofst_str[6], val_str[11];
+	unsigned int ofst = 0;
+	unsigned int val = 0;
+
+	printk("%s: buf=%p, count=%d, ppos=%p\n", __FUNCTION__, buf, count, ppos);
+	if (count > sizeof(debug_buf))
+		return -EFAULT;
+	if (copy_from_user(debug_buf, buf, count))
+		return -EFAULT;
+	debug_buf[count] = '\0';	/* end of string */
+	cnt = sscanf(debug_buf, "%s %s", ofst_str, val_str);
+	printk("ofst= \"%s\"; val= \"%s\"\n", ofst_str, val_str);
+
+	/* Str to Int*/
+	if ((ofst_str[0] == '0') && (ofst_str[1] == 'x') && (val_str[0] == '0') && (val_str[1] == 'x')) {
+		/* Parse ofst */
+		int i = 0;
+
+		for (i = 2; i < 5; i++) {
+			if ((ofst_str[i] >= '0') && (ofst_str[i] <= '9'))
+				ofst = ofst * 16 + ofst_str[i] - '0';
+			else if ((ofst_str[i] >= 'a') && (ofst_str[i] <= 'f'))
+				ofst = ofst * 16 + ofst_str[i] - 'a' + 10;
+			else if ((ofst_str[i] >= 'A') && (ofst_str[i] <= 'F'))
+				ofst = ofst * 16 + ofst_str[i] - 'A' + 10;
+			else {
+				break;
+			}
+		}
+
+		/* Parse val */
+		for (i = 2; i < 10; i++) {
+			if ((val_str[i] >= '0') && (val_str[i] <= '9'))
+				val = val*16 + val_str[i] - '0';
+			else if ((val_str[i] >= 'a') && (val_str[i] <= 'f'))
+				val = val*16 + val_str[i] - 'a' + 10;
+			else if ((val_str[i] >= 'A') && (val_str[i] <= 'F'))
+				val = val*16 + val_str[i] - 'A' + 10;
+			else {
+				break;
+			}
+		}
+
+		/* Write the Reg */
+		printk("Offset= %d(0x%x); Value= %d(0x%x)\n", ofst, ofst, val, val);
+		if (ofst <= 0xa3) {
+			tegra_hdmi_writel(hdmi, val, ofst);
+			printk("reg writing done.\n");
+		} else
+			printk("Do nothing. The upper-bound of offset is 0xa3.\n");
+
+	} else {
+		/* Error format */
+		printk("Wrong Usage. Please add the prefix, \"0x\", for reg Offset & Value.\nThe right usage format is \"echo 0x__ 0x___ > /d/hdmi_reg_rw\"\n");
+	}
+
+	return count;
+}
+static const struct file_operations dbg_hdmi_reg_rw_fops = {
+	.open		= dbg_hdmi_reg_rw_open,
+	.read		= dbg_hdmi_reg_rw_read,
+	.write		= dbg_hdmi_reg_rw_write,
+};
+
 static void tegra_dc_dbg_add(struct tegra_dc *dc)
 {
 	char name[32];
 
 	snprintf(name, sizeof(name), "tegra_dc%d_regs", dc->ndev->id);
 	(void) debugfs_create_file(name, S_IRUGO, NULL, dc, &dbg_fops);
+	if(dc->ndev->id == 1) {
+		(void) debugfs_create_file("hdmi_reg_rw", S_IRUGO | S_IWUSR, NULL, dc, &dbg_hdmi_reg_rw_fops);
+	}
 }
 #else
 static void tegra_dc_dbg_add(struct tegra_dc *dc) {}
@@ -1382,33 +1534,109 @@ static void tegra_dc_init(struct tegra_dc *dc)
 		tegra_dc_program_mode(dc, &dc->mode);
 }
 
+static void get_asus_projectID(){
+    if(asus_project_id == -1){
+        asus_project_id = ASUSGetProjectID();      
+    }
+}
+
 static bool _tegra_dc_controller_enable(struct tegra_dc *dc)
 {
-	if (dc->out->enable)
-		dc->out->enable();
+	printk("Disp: _tegra_dc_controller_enable(id= %d) in+\n", dc->ndev->id);
 
-	tegra_dc_setup_clk(dc, dc->clk);
-	clk_enable(dc->clk);
-	clk_enable(dc->emc_clk);
+	if (dc->ndev->id == 0) {
+		struct timeval t_resume;
+		int diff_msec = 0;
 
-	enable_irq(dc->irq);
+		battery_charger_callback(false);
+		get_asus_projectID();
+/*		if(asus_project_id > 100 && asus_project_id < 104)
+		    (*touch_enable_fp[asus_project_id - 101])();*/
+	
+		tegra_dc_setup_clk(dc, dc->clk);
+		clk_enable(dc->clk);
+		clk_enable(dc->emc_clk);
 
-	tegra_dc_init(dc);
+		enable_irq(dc->irq);
 
-	if (dc->out_ops && dc->out_ops->enable)
-		dc->out_ops->enable(dc);
+		tegra_dc_init(dc);
 
-	if (dc->out->out_pins)
-		tegra_dc_set_out_pin_polars(dc, dc->out->out_pins,
+		if (dc->out_ops && dc->out_ops->enable)
+			dc->out_ops->enable(dc);
+
+		if (dc->out->out_pins)
+			tegra_dc_set_out_pin_polars(dc, dc->out->out_pins,
 					    dc->out->n_out_pins);
 
-	if (dc->out->postpoweron)
-		dc->out->postpoweron();
+		/* HSD: TP13= 1000 ms~ */
+		do_gettimeofday(&t_resume);
+		diff_msec = ((t_resume.tv_sec - t_suspend.tv_sec) * 1000000 +
+			(t_resume.tv_usec - t_suspend.tv_usec)) / 1000;
 
-	/* force a full blending update */
-	dc->blend.z[0] = -1;
+		printk("Disp: diff_msec= %d\n", diff_msec);
+		if((diff_msec < 1000) && (diff_msec >= 0))
+			msleep(1000 - diff_msec);
 
-	return true;
+		gpio_set_value(ventana_pnl_pwr_enb, 1);
+
+		/* HSD: TP2= 0 ~50 ms~ */
+		msleep(10);
+
+		gpio_set_value(ventana_lvds_shutdown, 1);
+
+		/* EPAD10x has no  postpoweron(). */
+		if (dc->out->postpoweron)
+			dc->out->postpoweron();
+
+		/* force a full blending update */
+		dc->blend.z[0] = -1;
+
+		/* HSD: TP3 + TP5 = 210 ms~ */
+		msleep(210);
+
+		if (!b_dc0_probe_stage)
+			ForceSetBrightness(15);
+
+		b_dc0_enabled = true;
+
+		printk("Disp: _tegra_dc_controller_enable(id= %d) out-\n", dc->ndev->id);
+		return true;
+	} else {
+		/* 720p? or 1080p?*/
+		if ((dc->mode.h_active == 1920) && (dc->mode.v_active == 1080))
+			hdmi_resolution = HDMI_ACTIVE_1920_1080;
+		else if ((dc->mode.h_active == 1280) && (dc->mode.v_active == 720))
+			hdmi_resolution = HDMI_ACTIVE_1280_720;
+		else
+			hdmi_resolution = HDMI_ACTIVE_NONE;
+
+		if (dc->out->enable)
+			dc->out->enable();
+
+		tegra_dc_setup_clk(dc, dc->clk);
+		clk_enable(dc->clk);
+		clk_enable(dc->emc_clk);
+
+		enable_irq(dc->irq);
+
+		tegra_dc_init(dc);
+
+		if (dc->out_ops && dc->out_ops->enable)
+			dc->out_ops->enable(dc);
+
+		if (dc->out->out_pins)
+			tegra_dc_set_out_pin_polars(dc, dc->out->out_pins,
+					    dc->out->n_out_pins);
+
+		if (dc->out->postpoweron)
+			dc->out->postpoweron();
+
+		/* force a full blending update */
+		dc->blend.z[0] = -1;
+
+		printk("Disp: _tegra_dc_controller_enable(id= %d) out-\n", dc->ndev->id);
+		return true;
+	}
 }
 
 static bool _tegra_dc_controller_reset_enable(struct tegra_dc *dc)
@@ -1464,11 +1692,15 @@ static bool _tegra_dc_controller_reset_enable(struct tegra_dc *dc)
 
 static bool _tegra_dc_enable(struct tegra_dc *dc)
 {
-	if (dc->mode.pclk == 0)
+	if (dc->mode.pclk == 0) {
+		printk("Disp: _tegra_dc_enable(id= %d) false out-\n", dc->ndev->id);
 		return false;
+	}
 
-	if (!dc->out)
+	if (!dc->out) {
+		printk("Disp: _tegra_dc_enable(id= %d) false out2-\n", dc->ndev->id);
 		return false;
+	}
 
 	tegra_dc_io_start(dc);
 
@@ -1477,36 +1709,84 @@ static bool _tegra_dc_enable(struct tegra_dc *dc)
 
 void tegra_dc_enable(struct tegra_dc *dc)
 {
+	printk("Disp: tegra_dc_enable(id= %d) in+\n", dc->ndev->id);
+
 	mutex_lock(&dc->lock);
 
 	if (!dc->enabled)
 		dc->enabled = _tegra_dc_enable(dc);
 
 	mutex_unlock(&dc->lock);
+
+	printk("Disp: tegra_dc_enable(id= %d) out-\n", dc->ndev->id);
 }
 
 static void _tegra_dc_controller_disable(struct tegra_dc *dc)
 {
-	disable_irq(dc->irq);
+	printk("Disp: _tegra_dc_controller_disable(id= %d) in+\n", dc->ndev->id);
 
-	if (dc->overlay)
-		tegra_overlay_disable(dc->overlay);
+	if (dc->ndev->id == 0) {
+		b_dc0_enabled = false;
 
-	if (dc->out_ops && dc->out_ops->disable)
-		dc->out_ops->disable(dc);
+		/* HSD: TP8 + TP10 = 210 ms~ */
+		msleep(210);
 
-	clk_disable(dc->emc_clk);
-	clk_disable(dc->clk);
-	tegra_dvfs_set_rate(dc->clk, 0);
+		disable_irq(dc->irq);
 
-	if (dc->out && dc->out->disable)
-		dc->out->disable();
+		if (dc->overlay)
+			tegra_overlay_disable(dc->overlay);
 
-	/* flush any pending syncpt waits */
-	while (dc->syncpt_min < dc->syncpt_max) {
-		dc->syncpt_min++;
-		nvhost_syncpt_cpu_incr(&dc->ndev->host->syncpt, dc->syncpt_id);
+		if (dc->out_ops && dc->out_ops->disable)
+			dc->out_ops->disable(dc);
+
+		gpio_set_value(ventana_lvds_shutdown, 0);
+
+		/* HSD: TP11 = 0 ~ 50 ms */
+		msleep(10);
+		gpio_set_value(ventana_pnl_pwr_enb, 0);
+
+		do_gettimeofday(&t_suspend);
+
+		clk_disable(dc->emc_clk);
+		clk_disable(dc->clk);
+		tegra_dvfs_set_rate(dc->clk, 0);
+
+		/* flush any pending syncpt waits */
+		while (dc->syncpt_min < dc->syncpt_max) {
+			dc->syncpt_min++;
+			nvhost_syncpt_cpu_incr(&dc->ndev->host->syncpt, dc->syncpt_id);
+		}
+		
+		get_asus_projectID();
+/*		if(asus_project_id > 100 && asus_project_id < 104){
+		    if((*touch_disable_fp[asus_project_id - 101])() == 0)
+		        battery_charger_callback(true);
+		}*/
+
+	} else {
+		disable_irq(dc->irq);
+
+		if (dc->overlay)
+			tegra_overlay_disable(dc->overlay);
+
+		if (dc->out_ops && dc->out_ops->disable)
+			dc->out_ops->disable(dc);
+
+		clk_disable(dc->emc_clk);
+		clk_disable(dc->clk);
+		tegra_dvfs_set_rate(dc->clk, 0);
+
+		if (dc->out && dc->out->disable)
+			dc->out->disable();
+
+		/* flush any pending syncpt waits */
+		while (dc->syncpt_min < dc->syncpt_max) {
+			dc->syncpt_min++;
+			nvhost_syncpt_cpu_incr(&dc->ndev->host->syncpt, dc->syncpt_id);
+		}
 	}
+
+	printk("Disp: _tegra_dc_controller_disable(id= %d) out-\n", dc->ndev->id);
 }
 
 static void _tegra_dc_disable(struct tegra_dc *dc)
@@ -1598,14 +1878,18 @@ static int tegra_dc_probe(struct nvhost_device *ndev)
 	int i;
 	unsigned long emc_clk_rate;
 
+	printk("Disp: tegra_dc_probe() in\n");
+
 	if (!ndev->dev.platform_data) {
 		dev_err(&ndev->dev, "no platform data\n");
+		printk("Disp: tegra_dc_probe() ENOENT out\n");
 		return -ENOENT;
 	}
 
 	dc = kzalloc(sizeof(struct tegra_dc), GFP_KERNEL);
 	if (!dc) {
 		dev_err(&ndev->dev, "can't allocate memory for tegra_dc\n");
+		printk("Disp: tegra_dc_probe() ENOMEM out\n");
 		return -ENOMEM;
 	}
 
@@ -1704,8 +1988,13 @@ static int tegra_dc_probe(struct nvhost_device *ndev)
 	dc->modeset_switch.print_state = switch_modeset_print_mode;
 	switch_dev_register(&dc->modeset_switch);
 
-	if (dc->pdata->default_out)
+	if (dc->pdata->default_out) {
+		if(dc->ndev->id == 0) {
+			dc->pdata->default_out->modes[0].pclk = lcd_pclk_khz * 1000;
+			printk("DC: Set LCD pclk as %d Hz\n", dc->pdata->default_out->modes[0].pclk);
+		}
 		tegra_dc_set_out(dc, dc->pdata->default_out);
+	}
 	else
 		dev_err(&ndev->dev, "No default output specified.  Leaving output disabled.\n");
 
@@ -1744,6 +2033,12 @@ static int tegra_dc_probe(struct nvhost_device *ndev)
 	if (dc->out_ops && dc->out_ops->detect)
 		dc->out_ops->detect(dc);
 
+	if (dc->ndev->id == 0) {
+		b_dc0_enabled = true;
+		b_dc0_probe_stage = false;
+	}
+
+	printk("Disp: tegra_dc_probe() out\n");
 	return 0;
 
 err_free_irq:
@@ -1761,6 +2056,7 @@ err_release_resource_reg:
 err_free:
 	kfree(dc);
 
+	printk("Disp: tegra_dc_probe() error out\n");
 	return ret;
 }
 

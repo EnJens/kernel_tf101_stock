@@ -57,8 +57,4 @@ int ventana_emc_init(void);
 #define WM8903_GP4		(WM8903_GPIO_BASE + 3)
 #define WM8903_GP5		(WM8903_GPIO_BASE + 4)
 
-/* Interrupt numbers from external peripherals */
-#define TPS6586X_INT_BASE	TEGRA_NR_IRQS
-#define TPS6586X_INT_END	(TPS6586X_INT_BASE + 32)
-
 #endif

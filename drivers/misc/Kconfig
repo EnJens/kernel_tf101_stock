@@ -340,6 +340,22 @@ config SENSORS_AK8975
 	  If you say yes here you get support for Asahi Kasei's
 	  orientation sensor AK8975.
 
+config SENSORS_AMI304
+	tristate "AMI304 compass support"
+	default n
+	depends on I2C
+	help
+	  If you say yes here you get support for AMIT's
+	  orientation sensor AMI304.
+
+config SENSORS_KXTF9
+	tristate "KXTF9 accelerometer support"
+	default n
+	depends on I2C
+	help
+	  If you say yes here you get support for Kionix's
+	  accelerometer sensor KXTF9.
+
 config SENSORS_NCT1008
 	tristate "ON Semiconductor Temperature Sensor"
 	default n
@@ -462,6 +478,10 @@ config MAX1749_VIBRATOR
 	default n
 	---help---
 	Adds a timed output vibrator device node for MAX1749 vibrator motor
+
+config KERNEL_RAMDUMP
+	bool "kernel ramdump driver"
+	default y
 
 source "drivers/misc/c2port/Kconfig"
 source "drivers/misc/eeprom/Kconfig"

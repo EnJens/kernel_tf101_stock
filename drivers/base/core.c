@@ -943,12 +943,18 @@ int device_add(struct device *dev)
 
 	dev = get_device(dev);
 	if (!dev)
+	{
+		printk(KERN_INFO "%s %d: get_device failed\n", __func__, __LINE__);
 		goto done;
+	}
 
 	if (!dev->p) {
 		error = device_private_init(dev);
 		if (error)
+		{
+			printk(KERN_INFO "%s %d: device_private_init failed\n", __func__, __LINE__);
 			goto done;
+		}
 	}
 
 	/*
@@ -962,11 +968,12 @@ int device_add(struct device *dev)
 	}
 
 	if (!dev_name(dev)) {
+		printk(KERN_INFO "%s %d: dev_name failed\n", __func__, __LINE__);
 		error = -EINVAL;
 		goto name_error;
 	}
 
-	pr_debug("device: '%s': %s\n", dev_name(dev), __func__);
+	printk("device: '%s': %s\n", dev_name(dev), __func__);
 
 	parent = get_device(dev->parent);
 	setup_parent(dev, parent);
@@ -979,7 +986,10 @@ int device_add(struct device *dev)
 	/* we require the name to be set before, and pass NULL */
 	error = kobject_add(&dev->kobj, dev->kobj.parent, NULL);
 	if (error)
+	{
+		printk(KERN_INFO "%s %d: kobject_add failed\n", __func__, __LINE__);
 		goto Error;
+	}
 
 	/* notify platform of device entry */
 	if (platform_notify)
@@ -987,32 +997,54 @@ int device_add(struct device *dev)
 
 	error = device_create_file(dev, &uevent_attr);
 	if (error)
+	{
+		printk(KERN_INFO "%s %d: device_create_file failed\n", __func__, __LINE__);
 		goto attrError;
+	}
 
 	if (MAJOR(dev->devt)) {
 		error = device_create_file(dev, &devt_attr);
 		if (error)
+		{
+			printk(KERN_INFO "%s %d: device_create_file failed\n", __func__, __LINE__);
 			goto ueventattrError;
+		}
 
 		error = device_create_sys_dev_entry(dev);
 		if (error)
+		{
+			printk(KERN_INFO "%s %d: device_create_sys_dev_entry failed\n", __func__, __LINE__);
 			goto devtattrError;
+		}
 
 		devtmpfs_create_node(dev);
 	}
 
 	error = device_add_class_symlinks(dev);
 	if (error)
+	{
+		printk(KERN_INFO "%s %d: device_add_class_symlinks failed\n", __func__, __LINE__);
 		goto SymlinkError;
+	}
 	error = device_add_attrs(dev);
 	if (error)
+	{
+		printk(KERN_INFO "%s %d: device_add_attrs failed\n", __func__, __LINE__);
 		goto AttrsError;
+	}
 	error = bus_add_device(dev);
 	if (error)
+	{
+		printk(KERN_INFO "%s %d: bus_add_device failed\n", __func__, __LINE__);
 		goto BusError;
+	}
 	error = dpm_sysfs_add(dev);
 	if (error)
+	{
+		printk(KERN_INFO "%s %d: dpm_sysfs_add failed\n", __func__, __LINE__);
 		goto DPMError;
+	}
+
 	device_pm_add(dev);
 
 	/* Notify clients of device addition.  This call must come

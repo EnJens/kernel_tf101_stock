@@ -146,6 +146,7 @@ struct mmc_card {
 	struct sdio_func_tuple	*tuples;	/* unknown common tuples */
 
 	struct dentry		*debugfs_root;
+
 };
 
 /*

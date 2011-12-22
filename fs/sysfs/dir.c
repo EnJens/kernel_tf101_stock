@@ -745,7 +745,7 @@ static void __sysfs_remove_dir(struct sysfs_dirent *dir_sd)
 	if (!dir_sd)
 		return;
 
-	pr_debug("sysfs %s: removing dir\n", dir_sd->s_name);
+	printk("sysfs %s: removing dir\n", dir_sd->s_name);
 	sysfs_addrm_start(&acxt, dir_sd);
 	pos = &dir_sd->s_dir.children;
 	while (*pos) {

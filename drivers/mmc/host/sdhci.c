@@ -1269,7 +1269,7 @@ int sdhci_enable(struct mmc_host *mmc)
 {
 	struct sdhci_host *host = mmc_priv(mmc);
 
-	if (!mmc->card || mmc->card->type == MMC_TYPE_SDIO)
+	if (!mmc->card || mmc->card->type == MMC_TYPE_SDIO || mmc->card->type == MMC_TYPE_MMC)
 		return 0;
 
 	if (mmc->ios.clock)
@@ -1282,7 +1282,7 @@ int sdhci_disable(struct mmc_host *mmc, int lazy)
 {
 	struct sdhci_host *host = mmc_priv(mmc);
 
-	if (!mmc->card || mmc->card->type == MMC_TYPE_SDIO)
+	if (!mmc->card || mmc->card->type == MMC_TYPE_SDIO || mmc->card->type == MMC_TYPE_MMC)
 		return 0;
 
 	sdhci_set_clock(host, 0);
@@ -1830,7 +1830,9 @@ int sdhci_add_host(struct sdhci_host *host)
 		host->align_buffer = kmalloc(128 * 4, GFP_KERNEL);
 		if (!host->adma_desc || !host->align_buffer) {
 			kfree(host->adma_desc);
+			host->adma_desc = NULL;
 			kfree(host->align_buffer);
+			host->align_buffer = NULL;
 			printk(KERN_WARNING "%s: Unable to allocate ADMA "
 				"buffers. Falling back to standard DMA.\n",
 				mmc_hostname(mmc));

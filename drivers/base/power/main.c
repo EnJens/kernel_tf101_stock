@@ -40,7 +40,7 @@
  * we must never try to acquire a device lock while holding
  * dpm_list_mutex.
  */
-
+extern int async_synchronize_full_timeout(unsigned int timeout);
 LIST_HEAD(dpm_list);
 
 static DEFINE_MUTEX(dpm_list_mtx);
@@ -494,7 +494,9 @@ void dpm_resume_noirq(pm_message_t state)
 		}
 	mutex_unlock(&dpm_list_mtx);
 	dpm_show_time(starttime, state, "early");
+	printk("dpm_resume_noirq resume_device_irqs+\n");
 	resume_device_irqs();
+	printk("\ndpm_resume_noirq resume_device_irqs-\n");
 }
 EXPORT_SYMBOL_GPL(dpm_resume_noirq);
 
@@ -629,7 +631,8 @@ static void dpm_resume(pm_message_t state)
 	struct list_head list;
 	struct device *dev;
 	ktime_t starttime = ktime_get();
-
+	int ret;
+	printk(KERN_ERR "PM: dpm_resume+\n");
 	INIT_LIST_HEAD(&list);
 	mutex_lock(&dpm_list_mtx);
 	pm_transition = state;
@@ -666,9 +669,11 @@ static void dpm_resume(pm_message_t state)
 			list_move_tail(&dev->power.entry, &list);
 		put_device(dev);
 	}
+	printk(KERN_ERR "PM: dpm_resume-\n");
 	list_splice(&list, &dpm_list);
 	mutex_unlock(&dpm_list_mtx);
-	async_synchronize_full();
+	ret=async_synchronize_full_timeout(2*HZ);
+	printk( "PM: dpm_resume-suspend_async_synchronize_full=%d\n",ret );
 	dpm_show_time(starttime, state, NULL);
 }
 
@@ -706,6 +711,7 @@ static void device_complete(struct device *dev, pm_message_t state)
  * Execute the ->complete() callbacks for all devices whose PM status is not
  * DPM_ON (this allows new devices to be registered).
  */
+ struct device *temp_dev=NULL;
 static void dpm_complete(pm_message_t state)
 {
 	struct list_head list;
@@ -715,7 +721,7 @@ static void dpm_complete(pm_message_t state)
 	transition_started = false;
 	while (!list_empty(&dpm_list)) {
 		struct device *dev = to_device(dpm_list.prev);
-
+		temp_dev=dev;
 		get_device(dev);
 		if (dev->power.status > DPM_ON) {
 			dev->power.status = DPM_ON;
@@ -732,6 +738,7 @@ static void dpm_complete(pm_message_t state)
 	}
 	list_splice(&list, &dpm_list);
 	mutex_unlock(&dpm_list_mtx);
+	temp_dev=NULL;
 }
 
 /**
@@ -745,7 +752,9 @@ void dpm_resume_end(pm_message_t state)
 {
 	might_sleep();
 	dpm_resume(state);
+	printk(" dpm_resume_end->dpm_complete+\n");
 	dpm_complete(state);
+	printk(" dpm_resume_end->dpm_complete-\n");
 }
 EXPORT_SYMBOL_GPL(dpm_resume_end);
 
@@ -972,11 +981,12 @@ static int dpm_suspend(pm_message_t state)
 	struct list_head list;
 	ktime_t starttime = ktime_get();
 	int error = 0;
-
+       int ret=0;
 	INIT_LIST_HEAD(&list);
 	mutex_lock(&dpm_list_mtx);
 	pm_transition = state;
 	async_error = 0;
+	printk(KERN_ERR "PM: dpm_suspend+\n");
 	while (!list_empty(&dpm_list)) {
 		struct device *dev = to_device(dpm_list.prev);
 
@@ -999,7 +1009,10 @@ static int dpm_suspend(pm_message_t state)
 	}
 	list_splice(&list, dpm_list.prev);
 	mutex_unlock(&dpm_list_mtx);
-	async_synchronize_full();
+	ret=async_synchronize_full_timeout(2*HZ);
+	if(!ret)//fail
+	     error=1;
+	printk( "PM: dpm_suspend-suspend_async_synchronize_full=%d\n",ret );
 	if (!error)
 		error = async_error;
 	if (!error)

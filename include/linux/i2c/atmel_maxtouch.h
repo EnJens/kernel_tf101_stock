@@ -24,7 +24,7 @@
  * see datasheet.
  */
 
-#define MXT_I2C_ADDRESS                                 MXT1386_I2C_ADDR3
+#define MXT_I2C_ADDRESS                                 MXT1386_I2C_ADDR4
 
 #define MXT_BL_ADDRESS                                  0x25
 
@@ -60,6 +60,7 @@
 #define MXT_TOUCH_XWHEEL_T13                            13
 #define MXT_TOUCH_YWHEEL_T14                            14
 #define	MXT_TOUCH_KEYARRAY_T15				15
+#define	MXT_SPT_COMMSCONFIG_T18				18
 #define	MXT_SPT_GPIOPWM_T19				19
 #define	MXT_PROCI_GRIPFACESUPPRESSION_T20		20
 #define	MXT_PROCG_NOISESUPPRESSION_T22			22
@@ -73,6 +74,9 @@
 #define	MXT_TOUCH_XSLIDERSET_T32			32
 #define	MXT_DEBUG_DIAGNOSTIC_T37			37
 #define	MXT_USER_INFO_T38				38
+#define	MXT_GRIPSUPPRESSION_T40		40
+#define	MXT_PALMSUPPRESSION_T41		41
+#define	MXT_DIGITIZER_T43			43
 
 /*
  * If a message is read from mXT when there's no new messages available,
@@ -251,22 +255,6 @@
    will be overwritten. */
 #define MXT_MESSAGE_BUFFER_SIZE  128
 
-/* Routines for memory access within a 16 bit address space */
-
-static int mxt_read_block(struct i2c_client *client, u16 addr, u16 length,
-			  u8 *value);
-static int mxt_write_byte(struct i2c_client *client, u16 addr, u8 value);
-static int mxt_write_block(struct i2c_client *client, u16 addr, u16 length,
-			   u8 *value);
-
-/* TODO: */
-/* Bootloader specific function prototypes. */
-static int mxt_read_byte_bl(struct i2c_client *client, u8 * value);
-static int mxt_read_block_bl(struct i2c_client *client, u16 length, u8 * value);
-static int mxt_write_byte_bl(struct i2c_client *client, u8 value);
-static int mxt_write_block_bl(struct i2c_client *client, u16 length,
-			      u8 *value);
-
 /**
  * struct mxt_platform_data - includes platform specific informatio
  * related to Atmel maXTouch touchscreen controller.
@@ -292,10 +280,5 @@ struct mxt_platform_data {
 	 u8(*valid_interrupt) (void);
 	 u8(*read_chg) (void);
 };
-
-static u8 mxt_valid_interrupt_dummy(void)
-{
-	return 1;
-}
 
 void mxt_hw_reset(void);

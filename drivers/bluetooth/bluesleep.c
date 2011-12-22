@@ -137,6 +137,9 @@ struct notifier_block hci_event_nblock = {
 
 struct proc_dir_entry *bluetooth_dir, *sleep_dir;
 
+/*Used to wakeup Linux-added by Hanes.*/
+static struct wake_lock bt_wakelock;
+
 /*
  * Local functions
  */
@@ -332,6 +335,7 @@ static void bluesleep_tx_timer_expire(unsigned long data)
  */
 static irqreturn_t bluesleep_hostwake_isr(int irq, void *dev_id)
 {
+	wake_lock_timeout(&bt_wakelock, 10*HZ);
 	/* schedule a tasklet to handle the change in the host wake line */
 	tasklet_schedule(&hostwake_task);
 	return IRQ_HANDLED;
@@ -411,8 +415,9 @@ static void bluesleep_stop(void)
 	}
 	/* assert BT_WAKE */
 	if (bsi->has_ext_wake == 1)
-		gpio_set_value(bsi->ext_wake, 1);
-	set_bit(BT_EXT_WAKE, &flags);
+		gpio_set_value(bsi->ext_wake, 0);
+	clear_bit(BT_EXT_WAKE, &flags);
+	//set_bit(BT_EXT_WAKE, &flags);
 	del_timer(&tx_timer);
 	clear_bit(BT_PROTO, &flags);
 
@@ -661,6 +666,7 @@ static int bluesleep_probe(struct platform_device *pdev)
 		bsi->irq_polarity = POLARITY_HIGH;/*anything else*/
 
 	wake_lock_init(&bsi->wake_lock, WAKE_LOCK_SUSPEND, "bluesleep");
+	wake_lock_init(&bt_wakelock,WAKE_LOCK_SUSPEND,"bluesleep_wakelock");
 
 	return 0;
 
@@ -678,6 +684,7 @@ static int bluesleep_remove(struct platform_device *pdev)
 	gpio_free(bsi->host_wake);
 	gpio_free(bsi->ext_wake);
 	wake_lock_destroy(&bsi->wake_lock);
+	wake_lock_destroy(&bt_wakelock);
 	kfree(bsi);
 	return 0;
 }
@@ -774,8 +781,11 @@ static int __init bluesleep_init(void)
 
 	/* assert bt wake */
 	if (bsi->has_ext_wake == 1)
-		gpio_set_value(bsi->ext_wake, 1);
-	set_bit(BT_EXT_WAKE, &flags);
+		gpio_set_value(bsi->ext_wake, 0);
+		//gpio_set_value(bsi->ext_wake, 1);
+	clear_bit(BT_EXT_WAKE, &flags);
+	//set_bit(BT_EXT_WAKE, &flags);
+
 	hci_register_notifier(&hci_event_nblock);
 
 	return 0;

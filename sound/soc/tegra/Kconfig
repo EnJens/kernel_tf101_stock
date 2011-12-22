@@ -22,3 +22,7 @@ config TEGRA_GENERIC_CODEC
 
 config TEGRA_JACK
     tristate "Tegra wired accessory jack support"
+
+config HEADSET_FUNCTION
+	tristate "Headset detection function"
+        default n    

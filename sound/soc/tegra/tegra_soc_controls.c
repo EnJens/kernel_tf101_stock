@@ -19,6 +19,21 @@
  */
 
 #include "tegra_soc.h"
+#include "../codecs/codec_param.h"
+#include "../codecs/wm8903.h"
+
+#define EP_101 101
+#define EP_102 102
+
+static struct tegra_audio_data *audio_data;
+static int tegra_jack_func;
+static int tegra_spk_func;
+extern bool lineout_alive;
+bool need_spk;
+EXPORT_SYMBOL(need_spk);
+extern int PRJ_ID;
+extern bool boot_finish;
+extern struct wm8903_parameters audio_params[];
 
 static void tegra_audio_route(struct tegra_audio_data* audio_data,
 			      int device_new, int is_call_mode_new)
@@ -33,24 +48,115 @@ static void tegra_audio_route(struct tegra_audio_data* audio_data,
 		(audio_data->play_device & TEGRA_AUDIO_DEVICE_OUT_BT_SCO) ||
 		(audio_data->capture_device & TEGRA_AUDIO_DEVICE_IN_BT_SCO);
 
-	if (play_device_new != audio_data->play_device) {
+	if (play_device_new) {
 		codec_con &= ~(TEGRA_HEADPHONE | TEGRA_LINEOUT |
-			TEGRA_SPK | TEGRA_EAR_SPK | TEGRA_HEADSET_OUT);
+			TEGRA_SPK | TEGRA_EAR_SPK | TEGRA_HEADSET);
 
-		if (play_device_new & TEGRA_AUDIO_DEVICE_OUT_HEADPHONE)
+		if ((play_device_new & TEGRA_AUDIO_DEVICE_OUT_HEADPHONE)&&(play_device_new & TEGRA_AUDIO_DEVICE_OUT_SPEAKER)) {
 			codec_con |= TEGRA_HEADPHONE;
-
-		if (play_device_new & TEGRA_AUDIO_DEVICE_OUT_LINE)
-			codec_con |= TEGRA_LINEOUT;
-
-		if (play_device_new & TEGRA_AUDIO_DEVICE_OUT_SPEAKER)
 			codec_con |= TEGRA_SPK;
+			printk("Routing to Headphone and Speaker output\n");
+			need_spk = true;
+			snd_soc_write(audio_data->codec, WM8903_POWER_MANAGEMENT_4, 0x0003); /* MIXSPK Enable*/
+			snd_soc_write(audio_data->codec, WM8903_POWER_MANAGEMENT_5, 0x0003); /* SPK Enable*/
+			if(boot_finish)
+				snd_soc_write(audio_data->codec, WM8903_GPIO_CONTROL_3, 0x0033); /* GPIO3 configure: EN_SPK*/
+			snd_soc_write(audio_data->codec, WM8903_ANALOGUE_SPK_MIX_LEFT_0, 0x0008); /* DACR_TO_MIXSPK Enable*/
+			snd_soc_write(audio_data->codec, WM8903_ANALOGUE_SPK_MIX_RIGHT_0, 0x0004); /* DACL_TO_MIXSPK Enable*/
+			if(PRJ_ID == EP_101){
+			snd_soc_write(audio_data->codec, WM8903_ANALOGUE_OUT3_LEFT,audio_params[EP101].analog_speaker_volume | 0x80); /* SPKL Volume: 4dB*/
+			snd_soc_write(audio_data->codec, WM8903_ANALOGUE_OUT3_RIGHT,audio_params[EP101].analog_speaker_volume | 0x80); /* SPKR Volume: 4dB*/
+			snd_soc_write(audio_data->codec, WM8903_ANALOGUE_OUT1_LEFT,audio_params[EP101].analog_headset_volume | 0x80); /* HPOUTL Volume: -2dB */
+			snd_soc_write(audio_data->codec, WM8903_ANALOGUE_OUT1_RIGHT,audio_params[EP101].analog_headset_volume | 0x80); /* HPOUTR Volume: -2dB */
+			}else if(PRJ_ID == EP_102){
+			snd_soc_write(audio_data->codec, WM8903_ANALOGUE_OUT3_LEFT,audio_params[EP102].analog_speaker_volume | 0x80); /* SPKL Volume: 0dB*/
+			snd_soc_write(audio_data->codec, WM8903_ANALOGUE_OUT3_RIGHT,audio_params[EP102].analog_speaker_volume | 0x80); /* SPKR Volume: 0dB*/
+			snd_soc_write(audio_data->codec, WM8903_ANALOGUE_OUT1_LEFT,audio_params[EP102].analog_headset_volume | 0x80); /* HPOUTL Volume: -16dB */
+			snd_soc_write(audio_data->codec, WM8903_ANALOGUE_OUT1_RIGHT, audio_params[EP102].analog_headset_volume | 0x80); /* HPOUTR Volume: -16dB */
+			}
+		}
+		else if (play_device_new & TEGRA_AUDIO_DEVICE_OUT_HEADPHONE) {
+			codec_con |= TEGRA_HEADPHONE;
+			printk("Routing to Headphone output\n");
+			need_spk = false;
+			snd_soc_write(audio_data->codec, WM8903_POWER_MANAGEMENT_4, 0x0000); /* MIXSPK Disable*/
+			snd_soc_write(audio_data->codec, WM8903_POWER_MANAGEMENT_5, 0x0000); /* SPK Disable*/
+			snd_soc_write(audio_data->codec, WM8903_GPIO_CONTROL_3, 0x0000); /* Media stream, Mute the speaker */
+			if(PRJ_ID == EP_101){
+			snd_soc_write(audio_data->codec, WM8903_ANALOGUE_OUT1_LEFT, audio_params[EP101].analog_headset_volume | 0x80); /* HPOUTL Volume: -2dB */
+			snd_soc_write(audio_data->codec, WM8903_ANALOGUE_OUT1_RIGHT,audio_params[EP101].analog_headset_volume | 0x80); /* HPOUTR Volume: -2dB */
+			}else if(PRJ_ID == EP_102){
+			snd_soc_write(audio_data->codec, WM8903_ANALOGUE_OUT1_LEFT,audio_params[EP102].analog_headset_volume | 0x80); /* HPOUTL Volume: -16dB */
+			snd_soc_write(audio_data->codec, WM8903_ANALOGUE_OUT1_RIGHT,audio_params[EP102].analog_headset_volume | 0x80); /* HPOUTR Volume: -16dB */
+			}
+		}
+		else if (play_device_new & TEGRA_AUDIO_DEVICE_OUT_HEADSET) {
+			codec_con |= TEGRA_HEADSET;
+			printk("Routing to Headset output\n");
+			need_spk = false;
+			snd_soc_write(audio_data->codec, WM8903_POWER_MANAGEMENT_4, 0x0000); /* MIXSPK Disable*/
+			snd_soc_write(audio_data->codec, WM8903_POWER_MANAGEMENT_5, 0x0000); /* SPK Disable*/
+			snd_soc_write(audio_data->codec, WM8903_GPIO_CONTROL_3, 0x0000); /* Media stream, Mute the speaker */
+			if(PRJ_ID == EP_101){
+			snd_soc_write(audio_data->codec, WM8903_ANALOGUE_OUT1_LEFT,audio_params[EP101].analog_headset_volume | 0x80); /* HPOUTL Volume: -2dB */
+			snd_soc_write(audio_data->codec, WM8903_ANALOGUE_OUT1_RIGHT,audio_params[EP101].analog_headset_volume | 0x80); /* HPOUTR Volume: -2dB */
+			}else if(PRJ_ID == EP_102){
+			snd_soc_write(audio_data->codec, WM8903_ANALOGUE_OUT1_LEFT,audio_params[EP102].analog_headset_volume | 0x80); /* HPOUTL Volume: -16dB */
+			snd_soc_write(audio_data->codec, WM8903_ANALOGUE_OUT1_RIGHT,audio_params[EP102].analog_headset_volume | 0x80); /* HPOUTR Volume: -16dB */
+			}
+		}
+		else if (play_device_new & TEGRA_AUDIO_DEVICE_OUT_LINE) {
+			codec_con |= TEGRA_LINEOUT;
+			printk("Routing to Line output\n");
+			need_spk = false;
+			snd_soc_write(audio_data->codec, WM8903_POWER_MANAGEMENT_4, 0x0000); /* MIXSPK Disable*/
+			snd_soc_write(audio_data->codec, WM8903_POWER_MANAGEMENT_5, 0x0000); /* SPK Disable*/
+			snd_soc_write(audio_data->codec, WM8903_GPIO_CONTROL_3, 0x0000); /* Media stream, Mute the speaker */
+		}
 
-		if (play_device_new & TEGRA_AUDIO_DEVICE_OUT_EAR_SPEAKER)
+		if (play_device_new & TEGRA_AUDIO_DEVICE_OUT_SPEAKER) {
+			codec_con |= TEGRA_SPK;
+			printk("Routing to Speaker output\n");
+			need_spk = true;
+			snd_soc_write(audio_data->codec, WM8903_POWER_MANAGEMENT_4, 0x0003); /* MIXSPK Enable*/
+			if(PRJ_ID == EP_101){
+			snd_soc_write(audio_data->codec, WM8903_ANALOGUE_OUT3_LEFT,audio_params[EP101].analog_speaker_volume | 0x80); /* SPKL Volume: 4dB*/
+			snd_soc_write(audio_data->codec, WM8903_ANALOGUE_OUT3_RIGHT,audio_params[EP101].analog_speaker_volume | 0x80); /* SPKR Volume: 4dB*/
+			}else if(PRJ_ID == EP_102){
+			snd_soc_write(audio_data->codec, WM8903_ANALOGUE_OUT3_LEFT,audio_params[EP102].analog_speaker_volume | 0x80); /* SPKL Volume: 0dB*/
+			snd_soc_write(audio_data->codec, WM8903_ANALOGUE_OUT3_RIGHT,audio_params[EP102].analog_speaker_volume | 0x80); /* SPKR Volume: 0dB*/
+			}
+			snd_soc_write(audio_data->codec, WM8903_POWER_MANAGEMENT_5, 0x0003); /* SPK Enable*/
+			if(boot_finish)
+				snd_soc_write(audio_data->codec, WM8903_GPIO_CONTROL_3, 0x0033); /* GPIO3 configure: EN_SPK*/
+			snd_soc_write(audio_data->codec, WM8903_ANALOGUE_SPK_MIX_LEFT_0, 0x0008); /* DACR_TO_MIXSPK Enable*/
+			snd_soc_write(audio_data->codec, WM8903_ANALOGUE_SPK_MIX_RIGHT_0, 0x0004); /* DACL_TO_MIXSPK Enable*/
+		}
+		else if (play_device_new & TEGRA_AUDIO_DEVICE_OUT_EAR_SPEAKER) {
 			codec_con |= TEGRA_EAR_SPK;
-
-		if (play_device_new & TEGRA_AUDIO_DEVICE_OUT_HEADSET)
-			codec_con |= TEGRA_HEADSET_OUT;
+			printk("Routing to Ear Speaker output\n");
+			need_spk = true;
+			snd_soc_write(audio_data->codec, WM8903_POWER_MANAGEMENT_4, 0x0003); /* MIXSPK Enable*/
+			if(PRJ_ID == EP_101){
+			snd_soc_write(audio_data->codec, WM8903_ANALOGUE_OUT3_LEFT,audio_params[EP101].analog_speaker_volume | 0x80); /* SPKL Volume: 4dB*/
+			snd_soc_write(audio_data->codec, WM8903_ANALOGUE_OUT3_RIGHT,audio_params[EP101].analog_speaker_volume | 0x80); /* SPKR Volume: 4dB*/
+			}else if(PRJ_ID == EP_102){
+			snd_soc_write(audio_data->codec, WM8903_ANALOGUE_OUT3_LEFT,audio_params[EP102].analog_speaker_volume | 0x80); /* SPKL Volume: 0dB*/
+			snd_soc_write(audio_data->codec, WM8903_ANALOGUE_OUT3_RIGHT,audio_params[EP102].analog_speaker_volume | 0x80); /* SPKR Volume: 0dB*/
+			}
+			snd_soc_write(audio_data->codec, WM8903_POWER_MANAGEMENT_5, 0x0003); /* SPK Enable*/
+			if(boot_finish)
+				snd_soc_write(audio_data->codec, WM8903_GPIO_CONTROL_3, 0x0033); /* GPIO3 configure: EN_SPK*/
+			snd_soc_write(audio_data->codec, WM8903_ANALOGUE_SPK_MIX_LEFT_0, 0x0008); /* DACR_TO_MIXSPK Enable*/
+			snd_soc_write(audio_data->codec, WM8903_ANALOGUE_SPK_MIX_RIGHT_0, 0x0004); /* DACL_TO_MIXSPK Enable*/
+		}
+		else {
+			printk("Routing to unknown output\n");
+			need_spk = false;
+			snd_soc_write(audio_data->codec, WM8903_POWER_MANAGEMENT_4, 0x0000); /* MIXSPK Disable*/
+			snd_soc_write(audio_data->codec, WM8903_POWER_MANAGEMENT_5, 0x0000); /* SPK Disable*/
+			snd_soc_write(audio_data->codec, WM8903_GPIO_CONTROL_3, 0x0000); /* Mute the speaker */
+		}
 
 		tegra_ext_control(audio_data->codec, codec_con);
 		audio_data->play_device = play_device_new;
@@ -58,7 +164,7 @@ static void tegra_audio_route(struct tegra_audio_data* audio_data,
 
 	if (capture_device_new != audio_data->capture_device) {
 		codec_con &= ~(TEGRA_INT_MIC | TEGRA_EXT_MIC |
-			TEGRA_LINEIN | TEGRA_HEADSET_IN);
+			TEGRA_LINEIN | TEGRA_HEADSET);
 
 		if (capture_device_new & (TEGRA_AUDIO_DEVICE_IN_BUILTIN_MIC |
 			TEGRA_AUDIO_DEVICE_IN_BACK_MIC))
@@ -71,7 +177,7 @@ static void tegra_audio_route(struct tegra_audio_data* audio_data,
 			codec_con |= TEGRA_LINEIN;
 
 		if (capture_device_new & TEGRA_AUDIO_DEVICE_IN_HEADSET)
-			codec_con |= TEGRA_HEADSET_IN;
+			codec_con |= TEGRA_HEADSET;
 
 		tegra_ext_control(audio_data->codec, codec_con);
 		audio_data->capture_device = capture_device_new;

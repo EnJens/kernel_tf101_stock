@@ -648,8 +648,10 @@ static int platform_legacy_suspend(struct device *dev, pm_message_t mesg)
 	struct platform_device *pdev = to_platform_device(dev);
 	int ret = 0;
 
-	if (dev->driver && pdrv->suspend)
+	if (dev->driver && pdrv->suspend){
+		printk("platform_legacy_suspend pdrv->suspend=%pF+\n",pdrv->suspend);
 		ret = pdrv->suspend(pdev, mesg);
+		}
 
 	return ret;
 }
@@ -660,8 +662,10 @@ static int platform_legacy_resume(struct device *dev)
 	struct platform_device *pdev = to_platform_device(dev);
 	int ret = 0;
 
-	if (dev->driver && pdrv->resume)
+	if (dev->driver && pdrv->resume){
+		printk("platform_legacy_resume pdrv->resume=%pF+\n",pdrv->resume);
 		ret = pdrv->resume(pdev);
+		}
 
 	return ret;
 }
@@ -681,8 +685,10 @@ static void platform_pm_complete(struct device *dev)
 {
 	struct device_driver *drv = dev->driver;
 
-	if (drv && drv->pm && drv->pm->complete)
+	if (drv && drv->pm && drv->pm->complete){
+		printk("drv->pm->complete=%pF\n",drv->pm->complete);
 		drv->pm->complete(dev);
+	}
 }
 
 #else /* !CONFIG_PM_SLEEP */
@@ -703,8 +709,10 @@ int __weak platform_pm_suspend(struct device *dev)
 		return 0;
 
 	if (drv->pm) {
-		if (drv->pm->suspend)
+		if (drv->pm->suspend){
+			printk("drv->pm->suspend=%pF+\n",drv->pm->suspend);
 			ret = drv->pm->suspend(dev);
+			}
 	} else {
 		ret = platform_legacy_suspend(dev, PMSG_SUSPEND);
 	}
@@ -721,8 +729,10 @@ int __weak platform_pm_suspend_noirq(struct device *dev)
 		return 0;
 
 	if (drv->pm) {
-		if (drv->pm->suspend_noirq)
+		if (drv->pm->suspend_noirq){
+			printk("drv->pm->suspend_noirq=%pF+\n",drv->pm->suspend_noirq);
 			ret = drv->pm->suspend_noirq(dev);
+	}
 	}
 
 	return ret;
@@ -737,8 +747,10 @@ int __weak platform_pm_resume(struct device *dev)
 		return 0;
 
 	if (drv->pm) {
-		if (drv->pm->resume)
+		if (drv->pm->resume){
+			printk("drv->pm->resume=%pF+\n",drv->pm->resume);
 			ret = drv->pm->resume(dev);
+		}
 	} else {
 		ret = platform_legacy_resume(dev);
 	}
@@ -755,8 +767,10 @@ int __weak platform_pm_resume_noirq(struct device *dev)
 		return 0;
 
 	if (drv->pm) {
-		if (drv->pm->resume_noirq)
+		if (drv->pm->resume_noirq){
+			printk("drv->pm->resume_noirq=%pF+\n",drv->pm->resume_noirq);
 			ret = drv->pm->resume_noirq(dev);
+	}
 	}
 
 	return ret;

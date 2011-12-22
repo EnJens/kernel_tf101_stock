@@ -41,7 +41,7 @@
 #include <linux/notifier.h>
 
 #include <asm/uaccess.h>
-
+#include <asm/io.h>
 /*
  * for_each_console() allows you to iterate on each console
  */
@@ -141,6 +141,8 @@ static int selected_console = -1;
 static int preferred_console = -1;
 int console_set_on_cmdline;
 EXPORT_SYMBOL(console_set_on_cmdline);
+int console_none_on_cmdline = 0;
+EXPORT_SYMBOL(console_none_on_cmdline);
 
 /* Flag: console code may call schedule() */
 static int console_may_schedule;
@@ -152,6 +154,12 @@ static char *log_buf = __log_buf;
 static int log_buf_len = __LOG_BUF_LEN;
 static unsigned logged_chars; /* Number of chars produced since last read+clear operation */
 static int saved_console_loglevel = -1;
+char *auto_dump_log_buf_ptr = __log_buf;
+
+#define IRAM_KERNEL_LOG_BUFFER	0x40020000
+extern int suspend_process_going;
+static void __iomem *iram_log_addr=NULL;
+#define IRAM_LOG_BUF(idx) ( ((unsigned char*)iram_log_addr)[(idx) & LOG_BUF_MASK] )
 
 #ifdef CONFIG_KEXEC
 /*
@@ -595,6 +603,8 @@ static void call_console_drivers(unsigned start, unsigned end)
 static void emit_log_char(char c)
 {
 	LOG_BUF(log_end) = c;
+	if(suspend_process_going)
+	 IRAM_LOG_BUF(log_end) = c;
 	log_end++;
 	if (log_end - log_start > log_buf_len)
 		log_start = log_end - log_buf_len;
@@ -754,7 +764,7 @@ static inline void printk_delay(void)
 		}
 	}
 }
-
+extern int  suspend_process_going;
 asmlinkage int vprintk(const char *fmt, va_list args)
 {
 	int printed_len = 0;
@@ -938,7 +948,7 @@ static int __init console_setup(char *str)
 	char buf[sizeof(console_cmdline[0].name) + 4]; /* 4 for index */
 	char *s, *options, *brl_options = NULL;
 	int idx;
-
+	iram_log_addr=ioremap(IRAM_KERNEL_LOG_BUFFER,8);
 #ifdef CONFIG_A11Y_BRAILLE_CONSOLE
 	if (!memcmp(str, "brl,", 4)) {
 		brl_options = "";
@@ -977,6 +987,9 @@ static int __init console_setup(char *str)
 			break;
 	idx = simple_strtoul(s, NULL, 10);
 	*s = 0;
+
+	if (!strcmp(buf, "none"))
+		console_none_on_cmdline = 1;
 
 	__add_preferred_console(buf, idx, options, brl_options);
 	console_set_on_cmdline = 1;

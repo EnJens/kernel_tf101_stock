@@ -27,13 +27,14 @@
 #include <linux/smp_lock.h>
 #include <linux/vmalloc.h>
 #include <linux/wait.h>
-#include <linux/slab.h>
 
 #include <asm/pgtable.h>
 #include <asm/tlbflush.h>
 
 #include <mach/iovmm.h>
 #include <mach/nvmap.h>
+
+#include <linux/slab.h>
 
 #include "nvmap.h"
 #include "nvmap_mru.h"

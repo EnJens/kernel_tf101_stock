@@ -346,14 +346,12 @@ struct clk *clk_get_parent(struct clk *c)
 	return c->parent;
 }
 EXPORT_SYMBOL(clk_get_parent);
-
 int clk_set_rate(struct clk *c, unsigned long rate)
 {
 	int ret = 0;
 	unsigned long flags;
 	unsigned long old_rate;
 	long new_rate;
-
 	clk_lock_save(c, flags);
 
 	if (!c->ops || !c->ops->set_rate) {
@@ -381,6 +379,7 @@ int clk_set_rate(struct clk *c, unsigned long rate)
 		ret = tegra_dvfs_set_rate(c, rate);
 		if (ret)
 			goto out;
+
 	}
 
 	ret = c->ops->set_rate(c, rate);
@@ -537,10 +536,13 @@ int __init tegra_disable_boot_clocks(void)
 		clk_lock_save(c, flags);
 		if (c->refcnt == 0 && c->state == ON &&
 				c->ops && c->ops->disable) {
-			pr_warning("Disabling clock %s left on by bootloader\n",
-				c->name);
-			c->ops->disable(c);
-			c->state = OFF;
+			if(strcmp(c->name, "pwm")) {
+				pr_warning("Disabling clock %s left on by bootloader\n",
+					c->name);
+				c->ops->disable(c);
+				c->state = OFF;
+			} else
+				printk("Don't disable pwm clock for boot animation\n");
 		}
 		clk_unlock_restore(c, flags);
 	}

@@ -97,12 +97,16 @@ struct tegra_dc {
 
 static inline void tegra_dc_io_start(struct tegra_dc *dc)
 {
+	printk("tegra_dc_io_start() +\n");
 	nvhost_module_busy(&dc->ndev->host->mod);
+	printk("tegra_dc_io_start() -\n");
 }
 
 static inline void tegra_dc_io_end(struct tegra_dc *dc)
 {
+	printk("tegra_dc_io_end() +\n");
 	nvhost_module_idle(&dc->ndev->host->mod);
+	printk("tegra_dc_io_end() -\n");
 }
 
 static inline unsigned long tegra_dc_readl(struct tegra_dc *dc,

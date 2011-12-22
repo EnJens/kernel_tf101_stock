@@ -274,6 +274,7 @@ static int tegra_fb_blank(int blank, struct fb_info *info)
 		return 0;
 
 	default:
+		printk("fb: unknown state, return -ENOTTY.\n");
 		return -ENOTTY;
 	}
 }

@@ -767,6 +767,7 @@ struct platform_device tegra_uartd_device = {
 		.coherent_dma_mask	= DMA_BIT_MASK(32),
 	},
 };
+EXPORT_SYMBOL(tegra_uartd_device);
 
 struct platform_device tegra_uarte_device = {
 	.name	= "tegra_uart",

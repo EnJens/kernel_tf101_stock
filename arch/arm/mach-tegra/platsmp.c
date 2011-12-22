@@ -108,6 +108,7 @@ int __cpuinit boot_secondary(unsigned int cpu, struct task_struct *idle)
 #if CONFIG_TRUSTED_FOUNDATIONS
 	callGenericSMC(0xFFFFFFFC, 0xFFFFFFE5, boot_vector);
 #else
+       printk("boot_secondary 1\n");
 	old_boot_vector = readl(vector_base);
 	writel(boot_vector, vector_base);
 
@@ -120,7 +121,7 @@ int __cpuinit boot_secondary(unsigned int cpu, struct task_struct *idle)
 
 	/* unhalt the cpu */
 	writel(0, IO_ADDRESS(TEGRA_FLOW_CTRL_BASE) + 0x14 + 0x8*(cpu-1));
-
+	  printk("boot_secondary 2\n");
 	timeout = jiffies + HZ;
 	while (time_before(jiffies, timeout)) {
 		if (readl(vector_base) != boot_vector)

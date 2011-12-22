@@ -39,6 +39,10 @@
 #include <linux/fsl_devices.h>
 #include <linux/dmapool.h>
 #include <linux/delay.h>
+#include <linux/gpio.h>
+#include <linux/workqueue.h>
+//add by yi-hsin for AC and USB cable insert wake lock
+#include <linux/wakelock.h>
 
 #include <asm/byteorder.h>
 #include <asm/io.h>
@@ -73,6 +77,59 @@ static struct usb_sys_interface *usb_sys_regs;
 
 /* it is initialized in probe()  */
 static struct fsl_udc *udc_controller = NULL;
+static spinlock_t usb_bus_active_lock;
+/* Enable or disable the callback for the battery driver. */
+#define BATTERY_CALLBACK_ENABLED 1
+
+struct asus_charger {
+
+	/*
+	 * The cable status:
+	 * 0000: no cable
+	 * 0001: USB cable
+	 * 0011: AC apdater
+	 */
+	unsigned cable_status;
+	int is_active;
+	int udc_vbus_active;
+	struct delayed_work usb_cable_detect;
+	//add by yi-hsin for AC and USB cable insert wake lock
+	struct wake_lock wake_lock;
+
+ };
+
+static struct asus_charger *charger_info;
+
+/* GPIO LIMIT_SET0 */
+#define TEGRA_GPIO_PS7 151
+/* GPIO LIMIT_SET1 */
+#define TEGRA_GPIO_PW1		177
+/* GPIO DOCK_IN */
+#define TEGRA_GPIO_PX5		189
+/* GPIO VOLUME UP + DOWN */
+#define TEGRA_GPIO_PQ4          132
+#define TEGRA_GPIO_PQ5          133
+
+static bool usb_cable_detect_init = false;
+static bool ac_connected = false;
+
+#if BATTERY_CALLBACK_ENABLED
+extern void battery_callback(unsigned cable_status);
+extern int asusec_is_ac_over_10v_callback(void);
+#endif
+
+/* Export the function "unsigned get_usb_cable_status(void)" for others to query the USB cable status. */
+unsigned get_usb_cable_status(void)
+{
+	if(charger_info != NULL){
+		printk(KERN_INFO "The USB cable status = %x\n", charger_info->cable_status) ;
+		return charger_info->cable_status;
+	}else{
+		printk(KERN_INFO "The USB cable status = %x\n", 0x0) ;
+		return 0x0;
+	}
+}
+EXPORT_SYMBOL( get_usb_cable_status);
 
 static const struct usb_endpoint_descriptor
 fsl_ep0_desc = {
@@ -1194,6 +1251,138 @@ static int can_pullup(struct fsl_udc *udc)
 	return udc->driver && udc->softconnect && udc->vbus_active;
 }
 
+/* add for GPIO LIMIT_SET0 set
+ * USB Cable -> LIMIT_SET0 = 0
+ * Adaptor -> LIMIT_SET0 = 1
+ */
+static void gpio_limit_set0_set(int enable)
+{
+	int ret = 0;
+
+	ret = gpio_direction_output(TEGRA_GPIO_PS7, enable);
+	if (ret < 0)
+		printk(KERN_ERR "Failed to set the GPIO%d to the status(%d): %d\n", TEGRA_GPIO_PS7, enable, ret);
+
+}
+extern int reboot_test_tool_installed;
+
+static void ac_gpio_init(void){
+	int ret = 0;
+
+	tegra_gpio_enable(TEGRA_GPIO_PW1);
+	tegra_gpio_enable(TEGRA_GPIO_PX5);
+
+	tegra_gpio_enable(TEGRA_GPIO_PS7);
+
+	ret = gpio_request(TEGRA_GPIO_PS7, "LIMIT_SET0");
+	if (ret < 0)
+		printk(KERN_ERR "Failed to request the GPIO%d: %d\n", TEGRA_GPIO_PS7, ret);
+
+	ret = gpio_request(TEGRA_GPIO_PW1,"LIMIT_SET1");
+	if (ret < 0)
+		printk(KERN_ERR"LIMIT_SET1 GPIO%d request fault!%d\n",TEGRA_GPIO_PW1,ret);
+
+	ret = gpio_direction_input(TEGRA_GPIO_PW1);
+	if (ret)
+		printk(KERN_ERR"gpio_direction_input failed for input %d\n", TEGRA_GPIO_PW1);
+
+	ret = gpio_request(TEGRA_GPIO_PX5,"DOCK_IN");
+	if (ret < 0)
+		printk(KERN_ERR"DOCK_IN GPIO%d request fault!%d\n",TEGRA_GPIO_PX5,ret);
+
+	ret = gpio_direction_input(TEGRA_GPIO_PX5);
+	if (ret)
+		printk(KERN_ERR"gpio_direction_input failed for input %d\n", TEGRA_GPIO_PX5);
+
+}
+
+static void usb_cable_detection(struct work_struct *w){
+	int	dock_in = 0;
+	int	ret = 0;
+	if (charger_info->udc_vbus_active && !charger_info->is_active) {
+		/* Reset the cable status, control the GPIO to set the charging current,
+		and report the cable status to the battery driver if necessary. */
+		charger_info->cable_status &= (0<<3|0<<2|0<<1|0<<0); //0000
+
+		if(!ac_connected){
+			printk(KERN_INFO "The USB cable is disconnected.\n");
+		}else{
+			printk(KERN_INFO "The AC adapter disconnected.\n");
+		}
+
+		gpio_limit_set0_set(0);
+#if BATTERY_CALLBACK_ENABLED
+		battery_callback(charger_info->cable_status);
+#endif
+
+		ac_connected = false;
+		wake_unlock(&charger_info->wake_lock);
+	} else if (!charger_info->udc_vbus_active && charger_info->is_active) {
+		/* Determine whether it is a USB cable or a AC adapter, set the cable status and report it to 
+		the battery driver if necessary as well as control GPIO to set the charging current. */
+		wake_lock(&charger_info->wake_lock);
+		switch (fsl_readl(&dr_regs->portsc1) & PORTSCX_LINE_STATUS_BITS) {
+			case PORTSCX_LINE_STATUS_SE0:
+				ac_connected = false; break;
+			case PORTSCX_LINE_STATUS_JSTATE:
+				ac_connected = false; break;
+			case PORTSCX_LINE_STATUS_KSTATE:
+				ac_connected = false; break;
+			case PORTSCX_LINE_STATUS_UNDEF:
+				ac_connected = true; break;
+			default:
+				ac_connected = false; break;
+		}
+		if(!ac_connected){
+			printk(KERN_INFO "The USB cable is connected.\n");
+			charger_info->cable_status |= 1<<0; //0001
+			gpio_limit_set0_set(0);
+		}else{
+			dock_in = gpio_get_value(TEGRA_GPIO_PX5);
+			ret = gpio_get_value(TEGRA_GPIO_PW1);
+			if(dock_in == 1){//no dock in
+				if(ret == 1){
+					printk(KERN_INFO"USB Adapter 14V connect\n");
+					charger_info->cable_status |= 1<<1|1<<0; //0011
+				}else if(ret == 0){
+					printk(KERN_INFO"USB Adapter 5V connect\n");
+					charger_info->cable_status |= 1<<0; //0001
+				}else{
+					printk(KERN_ERR"No define Adapter status\n");
+					charger_info->cable_status |= 1<<0; //0001
+				}
+			}else if(dock_in == 0){// dock in
+				if(asusec_is_ac_over_10v_callback() == 0x20){
+					printk(KERN_INFO"USB + Docking 14V connect\n");
+					charger_info->cable_status |= 1<<1|1<<0; //0011
+				}else if(asusec_is_ac_over_10v_callback() == 0){
+					printk(KERN_INFO"USB + Docking 5V connect\n");
+					charger_info->cable_status |= 1<<0; //0001
+				}else{
+					printk(KERN_INFO"unknown status\n");
+					if(ret == 1){
+						printk(KERN_INFO"LIMIT SET1: 14V connect\n");
+						charger_info->cable_status |= 1<<1|1<<0; //0011
+					}else if(ret == 0){
+						printk(KERN_INFO"LIMIT SET1: 5V connect\n");
+						charger_info->cable_status |= 1<<0; //0001
+					}else{
+						printk(KERN_ERR"LIMIT SET1 error status\n");
+						charger_info->cable_status |= 1<<0; //0001
+					}
+				}
+			}else{
+				printk(KERN_ERR"No define the USB status\n");
+			}
+			gpio_limit_set0_set(1);
+		}
+#if BATTERY_CALLBACK_ENABLED
+			battery_callback(charger_info->cable_status);
+#endif
+	}
+}
+
+
 /* Notify controller that VBUS is powered, Called by whatever
    detects VBUS sessions */
 static int fsl_vbus_session(struct usb_gadget *gadget, int is_active)
@@ -1203,9 +1392,25 @@ static int fsl_vbus_session(struct usb_gadget *gadget, int is_active)
 
 	udc = container_of(gadget, struct fsl_udc, gadget);
 
+	spin_lock(&usb_bus_active_lock);
+	if(!usb_cable_detect_init){
+		ac_gpio_init();
+		charger_info = kzalloc(sizeof(struct asus_charger), GFP_KERNEL);
+		charger_info->cable_status = 0x0;
+		charger_info->is_active = is_active;
+		charger_info->udc_vbus_active = 0;
+		INIT_DELAYED_WORK(&charger_info->usb_cable_detect,usb_cable_detection);
+		wake_lock_init(&charger_info->wake_lock,WAKE_LOCK_SUSPEND, "usb_bus_active");
+		usb_cable_detect_init = true;
+		gpio_limit_set0_set(0);
+	}
+	spin_unlock(&usb_bus_active_lock);
+
 	VDBG("VBUS %s", is_active ? "on" : "off");
 
 	if (udc->transceiver) {
+		charger_info->is_active = is_active;
+		charger_info->udc_vbus_active = udc->vbus_active;
 		if (udc->vbus_active && !is_active) {
 			spin_lock_irqsave(&udc->lock, flags);
 			/* reset all internal Queues and inform client driver */
@@ -1217,6 +1422,7 @@ static int fsl_vbus_session(struct usb_gadget *gadget, int is_active)
 			udc->usb_state = USB_STATE_DEFAULT;
 			spin_unlock_irqrestore(&udc->lock, flags);
 			fsl_udc_clk_suspend(false);
+			schedule_delayed_work(&charger_info->usb_cable_detect, 0*HZ);
 		} else if (!udc->vbus_active && is_active) {
 			fsl_udc_clk_resume(false);
 			/* setup the controller in the device mode */
@@ -1230,6 +1436,7 @@ static int fsl_vbus_session(struct usb_gadget *gadget, int is_active)
 			udc->vbus_active = 1;
 			/* start the controller */
 			dr_controller_run(udc);
+			schedule_delayed_work(&charger_info->usb_cable_detect, 0.2*HZ);
 		}
 		return 0;
 	}
@@ -2598,6 +2805,7 @@ static int __init struct_ep_setup(struct fsl_udc *udc, unsigned char index,
  * all intialization operations implemented here except enabling usb_intr reg
  * board setup should have been done in the platform code
  */
+extern  int tegra_set_lp0_wake_type(int irq, int flow_type);
 static int __init fsl_udc_probe(struct platform_device *pdev)
 {
 	struct resource *res;
@@ -2607,7 +2815,6 @@ static int __init fsl_udc_probe(struct platform_device *pdev)
 #if defined(CONFIG_ARCH_TEGRA)
 	struct resource *res_sys = NULL;
 #endif
-
 	if (strcmp(pdev->name, driver_name)) {
 		VDBG("Wrong device");
 		return -ENODEV;
@@ -2769,6 +2976,34 @@ static int __init fsl_udc_probe(struct platform_device *pdev)
 #endif
 #endif
 
+       tegra_set_lp0_wake_type(INT_USB, IRQF_TRIGGER_RISING | IRQF_TRIGGER_FALLING);
+       enable_irq_wake(INT_USB);
+
+	spin_lock(&usb_bus_active_lock);
+	if(!usb_cable_detect_init){
+		ac_gpio_init();
+		charger_info = kzalloc(sizeof(struct asus_charger), GFP_KERNEL);
+		charger_info->cable_status = 0x0;
+		charger_info->is_active = 0;
+		charger_info->udc_vbus_active = 0;
+		INIT_DELAYED_WORK(&charger_info->usb_cable_detect,usb_cable_detection);
+		wake_lock_init(&charger_info->wake_lock,WAKE_LOCK_SUSPEND, "usb_bus_active");
+		usb_cable_detect_init = true;
+		gpio_limit_set0_set(0);
+	}
+	spin_unlock(&usb_bus_active_lock);
+	 //disable the init  volume up+down gpio request because the gpio  init before usb driver init
+	/*tegra_gpio_enable(TEGRA_GPIO_PQ4);
+	tegra_gpio_enable(TEGRA_GPIO_PQ5);
+
+	retval = gpio_request(TEGRA_GPIO_PQ4,"VOL_DWN_BUTTON");
+	if (retval < 0)
+		printk(KERN_ERR"GPIO%d request fault!%d\n",TEGRA_GPIO_PQ4,ret);
+
+	retval = gpio_request(TEGRA_GPIO_PQ5,"VOL_UP_BUTTON");
+	if (retval < 0)
+		printk(KERN_ERR"GPIO%d request fault!%d\n",TEGRA_GPIO_PQ5,ret);*/
+
 	return 0;
 
 err_unregister:
@@ -2831,11 +3066,22 @@ static int __exit fsl_udc_remove(struct platform_device *pdev)
  * Modify Power management attributes
  * Used by OTG statemachine to disable gadget temporarily
  -----------------------------------------------------------------*/
+//add for record usb vubs status in suspend
+static int usb_vbus_suspend_status = 0;
 static int fsl_udc_suspend(struct platform_device *pdev, pm_message_t state)
 {
+    printk("fsl_udc_suspend+\n");
+    /* check for VBUS */
+    if (!(fsl_readl(&usb_sys_regs->vbus_wakeup) & USB_SYS_VBUS_STATUS)) {
+	usb_vbus_suspend_status = 0;
+    } else {
+        usb_vbus_suspend_status = 1;
+    }
+
     if (udc_controller->transceiver) {
         if (udc_controller->transceiver->state != OTG_STATE_B_PERIPHERAL) {
             /* we are not in device mode, return */
+            printk("fsl_udc_suspend-\n");
             return 0;
         }
     }
@@ -2853,6 +3099,7 @@ static int fsl_udc_suspend(struct platform_device *pdev, pm_message_t state)
         udc_controller->transceiver->state = OTG_STATE_UNDEFINED;
     }
     fsl_udc_clk_suspend(true);
+    printk("fsl_udc_suspend-\n");
     return 0;
 }
 
@@ -2862,15 +3109,23 @@ static int fsl_udc_suspend(struct platform_device *pdev, pm_message_t state)
  *-----------------------------------------------------------------*/
 static int fsl_udc_resume(struct platform_device *pdev)
 {
+    printk("fsl_udc_resume+\n");
     if (udc_controller->transceiver) {
 
         if (!(fsl_readl(&usb_sys_regs->vbus_wakeup) & USB_SYS_ID_PIN_STATUS)) {
             /* If ID status is low means host is connected, return */
+            printk("fsl_udc_resume-\n");
 	    return 0;
         }
         /* check for VBUS */
         if (!(fsl_readl(&usb_sys_regs->vbus_wakeup) & USB_SYS_VBUS_STATUS)) {
             /* if there is no VBUS then power down the clocks and return */
+	    if(usb_vbus_suspend_status == 1){
+    	    	charger_info->udc_vbus_active = 1;
+            	charger_info->is_active = 0;
+    	    	schedule_delayed_work(&charger_info->usb_cable_detect, 0*HZ);
+	    }
+            printk("fsl_udc_resume-\n");
             return 0;
         } else {
 		fsl_udc_clk_resume(true);
@@ -2884,6 +3139,11 @@ static int fsl_udc_resume(struct platform_device *pdev)
 
 #if defined(CONFIG_ARCH_TEGRA)
     fsl_udc_restart(udc_controller);
+    if(usb_vbus_suspend_status == 0){
+    	charger_info->udc_vbus_active = 0;
+    	charger_info->is_active = 1;
+    	schedule_delayed_work(&charger_info->usb_cable_detect, 0.2*HZ);
+    }
 #else
     /* Enable DR irq reg and set controller Run */
     if (udc_controller->stopped) {
@@ -2898,6 +3158,7 @@ static int fsl_udc_resume(struct platform_device *pdev)
     if (!(fsl_readl(&usb_sys_regs->vbus_wakeup) & USB_SYS_VBUS_STATUS))
         fsl_udc_clk_suspend(false);
 
+    printk("fsl_udc_resume-\n");
     return 0;
 }
 
@@ -2919,6 +3180,7 @@ static struct platform_driver udc_driver = {
 static int __init udc_init(void)
 {
 	printk(KERN_INFO "%s (%s)\n", driver_desc, DRIVER_VERSION);
+	spin_lock_init(&usb_bus_active_lock);
 	return platform_driver_probe(&udc_driver, fsl_udc_probe);
 }
 

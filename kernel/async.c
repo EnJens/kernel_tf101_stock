@@ -299,3 +299,35 @@ void async_synchronize_cookie(async_cookie_t cookie)
 	async_synchronize_cookie_domain(cookie, &async_running);
 }
 EXPORT_SYMBOL_GPL(async_synchronize_cookie);
+
+int async_synchronize_cookie_domain_timeout(async_cookie_t cookie,
+				     struct list_head *running,unsigned int timeout)
+{
+	ktime_t starttime, delta, endtime;
+       int ret=0;
+
+	printk("async_waiting @ %i\n", task_pid_nr(current));
+	starttime = ktime_get();
+	ret=wait_event_timeout(async_done, lowest_in_progress(running) >= cookie,timeout);
+
+	endtime = ktime_get();
+	delta = ktime_sub(endtime, starttime);
+
+	printk("async_continuing @ %i after %lli usec\n",task_pid_nr(current),(long long)ktime_to_ns(delta) >> 10);
+	return ret;
+}
+int async_synchronize_cookie_timeout(async_cookie_t cookie, unsigned timeout)
+{
+	return async_synchronize_cookie_domain_timeout(cookie, &async_running,timeout);
+}
+int async_synchronize_full_timeout(unsigned int timeout)
+{
+       int ret=0;
+	do {
+		ret=async_synchronize_cookie_timeout(next_cookie,timeout);
+		if (!ret)
+			break;
+	} while (!list_empty(&async_running) || !list_empty(&async_pending));
+	return ret;
+}
+EXPORT_SYMBOL_GPL(async_synchronize_full_timeout);

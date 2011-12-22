@@ -30,6 +30,8 @@
 
 #include <mach/iomap.h>
 #include <mach/suspend.h>
+#include <mach/board-ventana-misc.h>
+#include <mach/dc.h>
 #include <mach/pinmux.h>
 
 #include "clock.h"
@@ -149,6 +151,8 @@
 #define PMC_BLINK_TIMER_ENB		(1 << 15)
 #define PMC_BLINK_TIMER_DATA_OFF_SHIFT	16
 #define PMC_BLINK_TIMER_DATA_OFF_MASK	0xffff
+
+u32 lcd_pclk_khz;
 
 static void __iomem *reg_clk_base = IO_ADDRESS(TEGRA_CLK_RESET_BASE);
 static void __iomem *reg_pmc_base = IO_ADDRESS(TEGRA_PMC_BASE);
@@ -652,6 +656,40 @@ static void tegra2_pll_clk_init(struct clk *c)
 {
 	u32 val = clk_readl(c->reg + PLL_BASE);
 
+	/* TODO: The following is only for HSD. */
+	if(!strcmp(c->name, "pll_c")) {
+		u32 pll_c_mul;
+
+		switch(ASUSGetProjectID()){
+		case 101:
+			if (ASUS3GAvailable()) {
+				/* TF101 3G sku */
+				lcd_pclk_khz = 83900;
+				printk("%s(%d): TF101G: lcd_pclk_khz= %d\n", __FUNCTION__, __LINE__, lcd_pclk_khz);
+			} else {
+				/* TF101 Wifi sku */
+				lcd_pclk_khz = 74000;
+				printk("%s(%d): TF101: lcd_pclk_khz= %d\n", __FUNCTION__, __LINE__, lcd_pclk_khz);
+			}
+			break;
+		case 102:
+			/* SL101 */
+			lcd_pclk_khz = 83900;
+			printk("%s(%d): SL101: lcd_pclk_khz= %d\n", __FUNCTION__, __LINE__, lcd_pclk_khz);
+			break;
+		default:
+			lcd_pclk_khz = 83900;
+			printk("%s(%d): ID= %d; lcd_pclk_khz= %d\n", __FUNCTION__, __LINE__, ASUSGetProjectID(), lcd_pclk_khz);
+
+		}
+
+		pll_c_mul = (lcd_pclk_khz * (600000/lcd_pclk_khz))/1000;
+		printk("LCD: Set mul of pll_c as \"%d\" for disp1\n", pll_c_mul);
+		val &= ~PLL_BASE_DIVN_MASK;
+		val = val | (pll_c_mul << PLL_BASE_DIVN_SHIFT);
+		clk_writel( val ,c->reg + PLL_BASE);
+	}
+
 	c->state = (val & PLL_BASE_ENABLE) ? ON : OFF;
 
 	if (c->flags & PLL_FIXED && !(val & PLL_BASE_OVERRIDE)) {
@@ -686,6 +724,39 @@ static int tegra2_pll_clk_enable(struct clk *c)
 		val |= PLLD_MISC_CLKENABLE;
 		clk_writel(val, c->reg + PLL_MISC(c) + PLL_BASE);
 	}
+
+#if 1
+	if(!strcmp(c->name, "pll_d")) {
+		u32 val2, hdmi_div, plld_base;
+		val2= clk_readl(c->reg);
+		printk("%s: pll_d: reg=0x%x; val= 0x%x\n", __func__, c->reg, val2);
+
+		switch(hdmi_resolution) {
+		case HDMI_ACTIVE_1920_1080:
+			plld_base = 0x4000C604;
+			clk_writel( plld_base ,c->reg + PLL_BASE);
+			hdmi_div = 0x40000002;
+			clk_writel(hdmi_div, 0x18c);
+			break;
+
+		case HDMI_ACTIVE_1280_720:
+			plld_base = 0x40006302;
+			clk_writel( plld_base ,c->reg + PLL_BASE);
+			hdmi_div = 0x40000006;
+			clk_writel(hdmi_div, 0x18c);
+			break;
+		case HDMI_ACTIVE_NONE:
+		default:
+			break;
+		}
+
+		val2= clk_readl(c->reg);
+		printk("%s: pll_d: reg=0x%x; val= 0x%x (force)\n", __func__, c->reg, val2);
+
+		val2= clk_readl(0x18c);
+		printk("%s: CLK_RST_CONTROLLER_CLK_SOURCE_HDMI_0= 0x%x\n", __func__, val2);
+	}
+#endif
 
 	tegra2_pll_clk_wait_for_lock(c);
 
@@ -1226,38 +1297,25 @@ static struct clk_ops tegra_audio_sync_clk_ops = {
 };
 
 /* call this function after pinmux configuration */
-static int tegra2_cdev_clk_set_parent(struct clk *c, struct clk *p)
+static void tegra2_cdev_clk_set_parent(struct clk *c)
 {
 	const struct clk_mux_sel *mux = 0;
 	const struct clk_mux_sel *sel;
 	enum tegra_pingroup pg = TEGRA_PINGROUP_CDEV1;
 	int val;
 
-	if (p) {
-		for (sel = c->inputs; sel->input != NULL; sel++) {
-			if (sel->input == p) {
-				clk_reparent(c, p);
-				return 0;
-			}
-		}
-	}
-	else {
-		/* Get pinmux setting for cdev1 and cdev2 from APB_MISC reg */
-		if (!strcmp(c->name, "clk_dev2"))
-			pg = TEGRA_PINGROUP_CDEV2;
+	/* Get pinmux setting for cdev1 and cdev2 from APB_MISC register */
+	if (!strcmp(c->name, "clk_dev2"))
+		pg = TEGRA_PINGROUP_CDEV2;
 
-		val = tegra_pinmux_get_func(pg);
-		for (sel = c->inputs; sel->input != NULL; sel++) {
-			if (val == sel->value) {
-				mux = sel;
-				BUG_ON(!mux);
-				clk_reparent(c, mux->input);
-				return 0;
-			}
-		}
+	val = tegra_pinmux_get_func(pg);
+	for (sel = c->inputs; sel->input != NULL; sel++) {
+		if (val == sel->value)
+			mux = sel;
 	}
+	BUG_ON(!mux);
 
-	return -EINVAL;
+	c->parent = mux->input;
 }
 
 /* cdev1 and cdev2 (dap_mclk1 and dap_mclk2) ops */
@@ -1282,7 +1340,7 @@ static int tegra2_cdev_clk_enable(struct clk *c)
 {
 	if (!c->parent) {
 		/* Set parent from inputs */
-		tegra2_cdev_clk_set_parent(c, NULL);
+		tegra2_cdev_clk_set_parent(c);
 		clk_enable(c->parent);
 	}
 
@@ -1301,7 +1359,6 @@ static struct clk_ops tegra_cdev_clk_ops = {
 	.init			= &tegra2_cdev_clk_init,
 	.enable			= &tegra2_cdev_clk_enable,
 	.disable		= &tegra2_cdev_clk_disable,
-	.set_parent		= &tegra2_cdev_clk_set_parent,
 };
 
 /* shared bus ops */

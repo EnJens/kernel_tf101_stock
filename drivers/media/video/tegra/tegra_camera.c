@@ -27,6 +27,7 @@
 #include <mach/clk.h>
 
 #include <media/tegra_camera.h>
+#include <linux/debugfs.h>
 
 /* Eventually this should handle all clock and reset calls for the isp, vi,
  * vi_sensor, and csi modules, replacing nvrm and nvos completely for camera
@@ -46,7 +47,8 @@ static struct clk *vi_clk;
 static struct clk *vi_sensor_clk;
 static struct clk *csus_clk;
 static struct clk *csi_clk;
-static struct regulator *tegra_camera_regulator_csi;
+
+static unsigned int caminfo;
 
 static int tegra_camera_enable_isp(void)
 {
@@ -77,22 +79,12 @@ static int tegra_camera_disable_vi(void)
 
 static int tegra_camera_enable_csi(void)
 {
-	int ret;
-
-	ret = regulator_enable(tegra_camera_regulator_csi);
-	if (ret)
-		return ret;
 	clk_enable(csi_clk);
 	return 0;
 }
 
 static int tegra_camera_disable_csi(void)
 {
-	int ret;
-
-	ret = regulator_disable(tegra_camera_regulator_csi);
-	if (ret)
-		return ret;
 	clk_disable(csi_clk);
 	return 0;
 }
@@ -195,6 +187,7 @@ static long tegra_camera_ioctl(struct file *file,
 	}
 
 	switch (cmd) {
+
 	case TEGRA_CAMERA_IOCTL_ENABLE:
 	{
 		int ret = 0;
@@ -241,9 +234,22 @@ static long tegra_camera_ioctl(struct file *file,
 	}
 	case TEGRA_CAMERA_IOCTL_RESET:
 		return tegra_camera_reset(id);
+
+	case TEGRA_CAMERA_IOCTL_CAMINFO:
+	{
+		int ret = 0;
+		if (copy_to_user((void __user *)arg, &caminfo,
+				 sizeof(unsigned int))) {
+			pr_err("%s: Failed to copy arg to user\n", __func__);
+		  return ret;
+    }
+    return 0;
+	}
+
 	default:
 		pr_err("%s: Unknown tegra_camera ioctl.\n", TEGRA_CAMERA_NAME);
 		return -EINVAL;
+
 	}
 	return 0;
 }
@@ -260,6 +266,34 @@ static int tegra_camera_release(struct inode *inode, struct file *file)
 
 	return 0;
 }
+
+int tegra_camera_set_caminfo(int num, int on)
+{
+  if (on)
+    caminfo |= (1U<<num);
+  else
+    caminfo &= ~(1U<num);
+  return caminfo;
+}
+
+int tegra_camera_mclk_on_off(int on)
+{
+  if (on)
+  {
+    clk_set_rate(csus_clk, 6000000);
+    clk_set_rate(vi_sensor_clk, 150000000);
+    clk_enable(csus_clk);
+    clk_enable(vi_sensor_clk);
+  }
+  else
+  {
+    clk_disable(vi_sensor_clk);
+    clk_disable(csus_clk);
+  }
+
+  return 0;
+}
+
 
 static const struct file_operations tegra_camera_fops = {
 	.owner = THIS_MODULE,
@@ -290,11 +324,6 @@ static int tegra_camera_probe(struct platform_device *pdev)
 	int err;
 
 	pr_info("%s: probe\n", TEGRA_CAMERA_NAME);
-	tegra_camera_regulator_csi = regulator_get(&pdev->dev, "vcsi");
-	if (IS_ERR_OR_NULL(tegra_camera_regulator_csi)) {
-		pr_err("%s: Couldn't get regulator vcsi\n", TEGRA_CAMERA_NAME);
-		return PTR_ERR(tegra_camera_regulator_csi);
-	}
 
 	err = misc_register(&tegra_camera_device);
 	if (err) {
@@ -330,7 +359,6 @@ vi_sensor_clk_get_err:
 vi_clk_get_err:
 	clk_put(isp_clk);
 misc_register_err:
-	regulator_put(tegra_camera_regulator_csi);
 	return err;
 }
 
@@ -342,7 +370,6 @@ static int tegra_camera_remove(struct platform_device *pdev)
 	clk_put(csus_clk);
 	clk_put(csi_clk);
 
-	regulator_put(tegra_camera_regulator_csi);
 	misc_deregister(&tegra_camera_device);
 	return 0;
 }
@@ -353,8 +380,13 @@ static struct platform_driver tegra_camera_driver = {
 	.driver = { .name = TEGRA_CAMERA_NAME }
 };
 
+static struct dentry *debugfs_dir;
+static struct dentry *debugfs_U32_caminfo;
+
 static int __init tegra_camera_init(void)
 {
+	debugfs_dir=debugfs_create_dir("tegra_camera",NULL);
+	debugfs_U32_caminfo=debugfs_create_u32("caminfo",0444, debugfs_dir, &caminfo);
 	return platform_driver_register(&tegra_camera_driver);
 }
 

@@ -250,9 +250,12 @@ static int nvhost_pm_prepare(struct device *dev)
 static void nvhost_pm_complete(struct device *dev)
 {
 	struct device_driver *drv = dev->driver;
-
-	if (drv && drv->pm && drv->pm->complete)
+	printk("nvhost_pm_complete+\n");
+	if (drv && drv->pm && drv->pm->complete){
+		printk("nvhost_pm_complete drv->pm->complete=%pF\n",drv->pm->complete );
 		drv->pm->complete(dev);
+}
+	printk("nvhost_pm_complete-\n");
 }
 
 #else /* !CONFIG_PM_SLEEP */

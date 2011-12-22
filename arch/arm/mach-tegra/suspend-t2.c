@@ -377,7 +377,7 @@ static int tegra_wake_event_irq[NUM_WAKE_EVENTS] = {
 	INT_RTC,
 	INT_KBC,
 	INT_EXTERNAL_PMU,
-	-EINVAL, /* TEGRA_USB1_VBUS, */
+	INT_USB, /* TEGRA_USB1_VBUS, */
 	-EINVAL, /* TEGRA_USB3_VBUS, */
 	-EINVAL, /* TEGRA_USB1_ID, */
 	-EINVAL, /* TEGRA_USB3_ID, */

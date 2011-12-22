@@ -54,11 +54,7 @@ struct tegra_otg_data {
 	struct platform_device *pdev;
 	struct work_struct work;
 	unsigned int intr_reg_data;
-	bool detect_vbus;
-	bool clk_enabled;
 };
-
-static struct tegra_otg_data *tegra_clone;
 
 static inline unsigned long otg_readl(struct tegra_otg_data *tegra,
 				      unsigned int offset)
@@ -70,20 +66,6 @@ static inline void otg_writel(struct tegra_otg_data *tegra, unsigned long val,
 			      unsigned int offset)
 {
 	writel(val, tegra->regs + offset);
-}
-
-static void tegra_otg_enable_clk(void)
-{
-	if (!tegra_clone->clk_enabled)
-		clk_enable(tegra_clone->clk);
-	tegra_clone->clk_enabled = true;
-}
-
-static void tegra_otg_disable_clk(void)
-{
-	if (tegra_clone->clk_enabled)
-		clk_disable(tegra_clone->clk);
-	tegra_clone->clk_enabled = false;
 }
 
 static const char *tegra_state_name(enum usb_otg_state state)
@@ -123,12 +105,6 @@ static void irq_work(struct work_struct *work)
 	enum usb_otg_state to = OTG_STATE_UNDEFINED;
 	unsigned long flags;
 	unsigned long status;
-
-	if (tegra->detect_vbus) {
-		tegra->detect_vbus = false;
-		tegra_otg_enable_clk();
-		return;
-	}
 
 	clk_enable(tegra->clk);
 
@@ -176,7 +152,7 @@ static void irq_work(struct work_struct *work)
 		}
 	}
 	clk_disable(tegra->clk);
-	tegra_otg_disable_clk();
+
 }
 
 static irqreturn_t tegra_otg_irq(int irq, void *data)
@@ -192,7 +168,6 @@ static irqreturn_t tegra_otg_irq(int irq, void *data)
 
 	if ((val & USB_ID_INT_STATUS) || (val & USB_VBUS_INT_STATUS)) {
 		tegra->int_status = val;
-		tegra->detect_vbus = false;
 		schedule_work(&tegra->work);
 	}
 
@@ -200,13 +175,6 @@ static irqreturn_t tegra_otg_irq(int irq, void *data)
 
 	return IRQ_HANDLED;
 }
-
-void tegra_otg_check_vbus_detection(void)
-{
-	tegra_clone->detect_vbus = true;
-	schedule_work(&tegra_clone->work);
-}
-EXPORT_SYMBOL(tegra_otg_check_vbus_detection);
 
 static int tegra_otg_set_peripheral(struct otg_transceiver *otg,
 				struct usb_gadget *gadget)
@@ -234,7 +202,6 @@ static int tegra_otg_set_peripheral(struct otg_transceiver *otg,
 
 	if ((val & USB_ID_INT_STATUS) || (val & USB_VBUS_INT_STATUS)) {
 		tegra->int_status = val;
-		tegra->detect_vbus = false;
 		schedule_work (&tegra->work);
 	}
 
@@ -291,8 +258,6 @@ static int tegra_otg_probe(struct platform_device *pdev)
 	spin_lock_init(&tegra->lock);
 
 	platform_set_drvdata(pdev, tegra);
-	tegra_clone = tegra;
-	tegra->clk_enabled = false;
 
 	tegra->clk = clk_get(&pdev->dev, NULL);
 	if (IS_ERR(tegra->clk)) {
@@ -377,40 +342,21 @@ static int __exit tegra_otg_remove(struct platform_device *pdev)
 static int tegra_otg_suspend(struct platform_device *pdev, pm_message_t state)
 {
 	struct tegra_otg_data *tegra_otg = platform_get_drvdata(pdev);
-	struct otg_transceiver *otg = &tegra_otg->otg;
-	enum usb_otg_state from = otg->state;
+
 	/* store the interupt enable for cable ID and VBUS */
-	clk_enable(tegra_otg->clk);
 	tegra_otg->intr_reg_data = readl(tegra_otg->regs + USB_PHY_WAKEUP);
-	clk_disable(tegra_otg->clk);
 
-	if (from == OTG_STATE_A_HOST)
-		tegra_stop_host(tegra_otg);
-	else if (from == OTG_STATE_B_PERIPHERAL && otg->gadget)
-		usb_gadget_vbus_disconnect(otg->gadget);
-
-	otg->state = OTG_STATE_A_SUSPEND;
-	tegra_otg_disable_clk();
 	return 0;
 }
 
 static int tegra_otg_resume(struct platform_device * pdev)
 {
-	struct tegra_otg_data *tegra_otg = platform_get_drvdata(pdev);
+       struct tegra_otg_data *tegra_otg = platform_get_drvdata(pdev);
 
-	tegra_otg_enable_clk();
-
-	/* Following delay is intentional.
-	 * It is placed here after observing system hang.
-	 * Root cause is not confirmed.
-	 */
-	msleep(1);
 	/* restore the interupt enable for cable ID and VBUS */
-	clk_enable(tegra_otg->clk);
 	writel(tegra_otg->intr_reg_data, (tegra_otg->regs + USB_PHY_WAKEUP));
-	clk_disable(tegra_otg->clk);
 
-	return 0;
+       return 0;
 }
 #endif
 
@@ -421,8 +367,8 @@ static struct platform_driver tegra_otg_driver = {
 	.remove  = __exit_p(tegra_otg_remove),
 	.probe   = tegra_otg_probe,
 #ifdef CONFIG_PM
-	.suspend = tegra_otg_suspend,
-	.resume = tegra_otg_resume,
+       .suspend = tegra_otg_suspend,
+       .resume = tegra_otg_resume,
 #endif
 };
 

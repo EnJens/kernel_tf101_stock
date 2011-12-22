@@ -271,6 +271,22 @@ static int edid_checksum(unsigned char *edid)
 	if (csum == 0x00 && all_null) {
 		/* checksum passed, everything's good */
 		err = 1;
+	} else {
+		/* 1-byte-shift workaround.
+		 * It's possible to get a wrong edid with 1-byte-shift pattern
+		 * on some specific devices. Here will rearrange the wrong edid
+		 * which we get to force pass csum check. If it's still an invald
+		 * edid, edid_check_header() should return an error.
+		 */
+		int j = 0;
+		unsigned char unnecessary = 0;
+		printk("Invalid edid. Try 1-byte-shift workaround\n");
+
+		unnecessary = edid[0];
+		for(j = 0; j < EDID_LENGTH -1; j++)
+			edid[j] = edid[j+1];
+		edid[127] = 0x100 - (csum - unnecessary);
+		err = 1;
 	}
 
 	return err;
@@ -284,8 +300,10 @@ static int edid_check_header(unsigned char *edid)
 		fix_edid(edid, fix);
 
 	for (i = 0; i < 8; i++) {
-		if (edid[i] != edid_v1_header[i])
+		if (edid[i] != edid_v1_header[i]) {
+			printk("edid[%d]= 0x%x != 0x%x\n", i, edid[i], edid_v1_header[i]);
 			err = 0;
+		}
 	}
 
 	return err;
@@ -914,8 +932,10 @@ void fb_edid_to_monspecs(unsigned char *edid, struct fb_monspecs *specs)
 	unsigned char *block;
 	int i, found = 0;
 
-	if (edid == NULL)
+	if (edid == NULL) {
+		printk("edid is NULL\n");
 		return;
+	}
 
 	if (!(edid_checksum(edid)))
 		return;

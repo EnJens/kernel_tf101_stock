@@ -53,6 +53,7 @@ static DECLARE_TASKLET(resend_tasklet, resend_irqs, 0);
  *
  * Is called with interrupts disabled and desc->lock held.
  */
+ extern int suspend_enter_flag;
 void check_irq_resend(struct irq_desc *desc, unsigned int irq)
 {
 	unsigned int status = desc->status;
@@ -72,9 +73,13 @@ void check_irq_resend(struct irq_desc *desc, unsigned int irq)
 
 		if (!desc->chip->retrigger || !desc->chip->retrigger(irq)) {
 #ifdef CONFIG_HARDIRQS_SW_RESEND
+			if(suspend_enter_flag)
+				printk(" check_irq_resend=%u+ \n",irq);
 			/* Set it pending and activate the softirq: */
 			set_bit(irq, irqs_resend);
 			tasklet_schedule(&resend_tasklet);
+			if(suspend_enter_flag)
+				printk(" check_irq_resend=%u-\n ",irq);
 #endif
 		}
 	}

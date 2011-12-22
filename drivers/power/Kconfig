@@ -179,4 +179,14 @@ config BATTERY_INTEL_MID
 	  Say Y here to enable the battery driver on Intel MID
 	  platforms.
 
+config BATTERY_BQ20Z45
+	tristate "BQ20Z45 battery driver"
+	depends on I2C
+	help
+	  Say Y here to enable support for batteries with BQ20Z45 chip.
+
+config ASUS_CHARGER_MODE
+	bool "ASUS charging mode"
+	help
+	  Say Y here to enable support for charging mode.
 endif # POWER_SUPPLY

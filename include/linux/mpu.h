@@ -397,7 +397,7 @@ struct ext_slave_descr *ak8975_get_slave_descr(void);
 #define get_compass_slave_descr ak8975_get_slave_descr
 #endif
 
-#ifdef CONFIG_MPU_SENSORS_AMI30X	/* AICHI Steel compass */
+#ifdef CONFIG_MPU_SENSORS_AMI304	/* AICHI Steel compass */
 struct ext_slave_descr *ami30x_get_slave_descr(void);
 #undef get_compass_slave_descr
 #define get_compass_slave_descr ami30x_get_slave_descr

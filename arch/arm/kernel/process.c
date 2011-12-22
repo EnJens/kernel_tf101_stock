@@ -37,7 +37,8 @@
 #include <asm/thread_notify.h>
 #include <asm/stacktrace.h>
 #include <asm/mach/time.h>
-
+#include "../arch/arm/mach-tegra/gpio-names.h"
+#include <linux/gpio.h>
 #ifdef CONFIG_CC_STACKPROTECTOR
 #include <linux/stackprotector.h>
 unsigned long __stack_chk_guard __read_mostly;
@@ -97,6 +98,7 @@ void arm_machine_restart(char mode, const char *cmd)
 	 * we may need it to insert some 1:1 mappings so that
 	 * soft boot works.
 	 */
+	 printk("arm_machine_restart mode=%x cmd=%x\n",mode,cmd);
 	setup_mm_for_reboot(mode);
 
 	/* Clean and invalidate caches */
@@ -227,12 +229,24 @@ void machine_halt(void)
 	machine_shutdown();
 	while (1);
 }
-
+extern int reboot_test_tool_installed;
+extern int exit_charging_mode;
 void machine_power_off(void)
 {
+#ifdef CONFIG_ASUS_CHARGER_MODE
+       extern unsigned battery_cable_status;
+#endif
 	machine_shutdown();
-	if (pm_power_off)
+#ifdef CONFIG_ASUS_CHARGER_MODE
+       if(gpio_get_value(TEGRA_GPIO_PX5)&& battery_cable_status && !reboot_test_tool_installed && exit_charging_mode){
+	   	arm_pm_restart(reboot_mode, 0);
+	}
+	else
+#endif
+	{
+	   if (pm_power_off)
 		pm_power_off();
+       }
 }
 
 void machine_restart(char *cmd)

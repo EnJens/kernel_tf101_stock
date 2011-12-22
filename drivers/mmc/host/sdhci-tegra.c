@@ -30,10 +30,13 @@
 
 #include "sdhci.h"
 
+#include "../debug_mmc.h"
+
 #define DRIVER_NAME    "sdhci-tegra"
 
 #define SDHCI_VENDOR_CLOCK_CNTRL       0x100
-
+#define is_card_mmc(_card) \
+((_card) && ((_card)->type == MMC_TYPE_MMC))
 struct tegra_sdhci_host {
 	struct sdhci_host *sdhci;
 	struct clk *clk;
@@ -314,7 +317,9 @@ static int tegra_sdhci_suspend(struct platform_device *pdev, pm_message_t state)
 	struct tegra_sdhci_host *host = platform_get_drvdata(pdev);
 	int ret = 0;
 
-	if (host->card_always_on && is_card_sdio(host->sdhci->mmc->card)) {
+	MMC_printk("%s:+", mmc_hostname(host->sdhci->mmc));
+
+       if ((host->card_always_on && is_card_sdio(host->sdhci->mmc->card)) || is_card_mmc(host->sdhci->mmc->card)){
 		int div = 0;
 		u16 clk;
 		unsigned int clock = 100000;
@@ -339,7 +344,7 @@ static int tegra_sdhci_suspend(struct platform_device *pdev, pm_message_t state)
 		clk = div << SDHCI_DIVIDER_SHIFT;
 		clk |= SDHCI_CLOCK_INT_EN | SDHCI_CLOCK_CARD_EN;
 		sdhci_writew(host->sdhci, clk, SDHCI_CLOCK_CONTROL);
-
+              printk("tegra_sdhci_suspend: skip %s suspend(always on)!\n",is_card_mmc(host->sdhci->mmc->card)?"eMMC":"SDIO");
 		return ret;
 	}
 
@@ -349,6 +354,8 @@ static int tegra_sdhci_suspend(struct platform_device *pdev, pm_message_t state)
 		pr_err("%s: failed, error = %d\n", __func__, ret);
 
 	tegra_sdhci_enable_clock(host, 0);
+
+	MMC_printk("%s:-", mmc_hostname(host->sdhci->mmc));
 	return ret;
 }
 
@@ -358,7 +365,9 @@ static int tegra_sdhci_resume(struct platform_device *pdev)
 	int ret;
 	u8 pwr;
 
-	if (host->card_always_on && is_card_sdio(host->sdhci->mmc->card)) {
+	MMC_printk("%s:+", mmc_hostname(host->sdhci->mmc));
+
+	if ((host->card_always_on && is_card_sdio(host->sdhci->mmc->card))||is_card_mmc(host->sdhci->mmc->card)) {
 		int ret = 0;
 
 		if (device_may_wakeup(&pdev->dev)) {
@@ -375,6 +384,7 @@ static int tegra_sdhci_resume(struct platform_device *pdev)
 		mmiowb();
 		host->sdhci->mmc->ops->set_ios(host->sdhci->mmc,
 			&host->sdhci->mmc->ios);
+		 printk("tegra_sdhci_suspend: skip %s resume(always on)!\n",is_card_mmc(host->sdhci->mmc->card)?"eMMC":"SDIO");
 		return 0;
 	}
 
@@ -388,6 +398,7 @@ static int tegra_sdhci_resume(struct platform_device *pdev)
 	if (ret)
 		pr_err("%s: failed, error = %d\n", __func__, ret);
 
+	MMC_printk("%s:-", mmc_hostname(host->sdhci->mmc));
 	return ret;
 }
 #else

@@ -93,7 +93,9 @@ void nvhost_syncpt_save(struct nvhost_syncpt *sp)
 		if (client_managed(i))
 			nvhost_syncpt_update_min(sp, i);
 		else
-			BUG_ON(!nvhost_syncpt_min_eq_max(sp, i));
+			//BUG_ON(!nvhost_syncpt_min_eq_max(sp, i));
+			if (!nvhost_syncpt_min_eq_max(sp, i)) //A temporary workaround....
+		        printk("BUG! sp=%p, i=%d",sp,i);
 	}
 
 	for (i = 0; i < NV_HOST1X_SYNCPT_NB_BASES; i++)

@@ -83,6 +83,7 @@ struct tegra_xtal_freq;
 
 struct tegra_usb_phy {
 	int instance;
+	int initialized;
 	const struct tegra_xtal_freq *freq;
 	void __iomem *regs;
 	void __iomem *pad_regs;
@@ -128,4 +129,4 @@ bool tegra_usb_phy_is_device_connected(struct tegra_usb_phy *phy);
 
 int __init tegra_usb_phy_init(struct usb_phy_plat_data *pdata, int size);
 
-#endif /* __MACH_USB_PHY_H */
+#endif /*__MACH_USB_PHY_H */

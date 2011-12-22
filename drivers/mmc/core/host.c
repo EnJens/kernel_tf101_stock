@@ -30,6 +30,7 @@ static void mmc_host_classdev_release(struct device *dev)
 {
 	struct mmc_host *host = cls_dev_to_mmc_host(dev);
 	kfree(host);
+	host = NULL;
 }
 
 static struct class mmc_host_class = {
@@ -106,6 +107,7 @@ struct mmc_host *mmc_alloc_host(int extra, struct device *dev)
 
 free:
 	kfree(host);
+	host = NULL;
 	return NULL;
 }
 

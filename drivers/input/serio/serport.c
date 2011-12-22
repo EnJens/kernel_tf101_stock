@@ -38,7 +38,87 @@ struct serport {
 	struct serio_device_id id;
 	spinlock_t lock;
 	unsigned long flags;
+	// EETI Patch //
+	struct work_struct create_kthread_wq;
 };
+
+// EETI Patch //
+#include <linux/kthread.h>
+
+#define SERIO_EGALAX	0xEF
+static struct task_struct *serport_task;
+
+static int serport_serio_write(struct serio *serio, unsigned char data);
+static void serport_serio_close(struct serio *serio);
+static int serport_serio_open(struct serio *serio);
+
+static int serport_thread(void *data)
+{
+	char name[64];
+	int retval;
+	struct serio *serio;
+	struct serport *serport = (struct serport*) data;
+	struct tty_struct * tty = serport->tty;
+
+	if (test_and_set_bit(SERPORT_BUSY, &serport->flags))
+	{
+		//schedule_work(&serport->create_kthread_wq);
+		retval = -EBUSY;
+		goto KTHREAD_EXIT;
+	}
+
+	serport->serio = serio = kzalloc(sizeof(struct serio), GFP_KERNEL);
+	if (!serio)
+	{
+		schedule_work(&serport->create_kthread_wq);
+		retval = -ENOMEM;
+		goto KTHREAD_EXIT;
+	}
+
+	strlcpy(serio->name, "Serial port", sizeof(serio->name));
+	snprintf(serio->phys, sizeof(serio->phys), "%s/serio0", tty_name(tty, name));
+	serio->id = serport->id;
+	serio->id.type = SERIO_RS232;
+	serio->write = serport_serio_write;
+	serio->open = serport_serio_open;
+	serio->close = serport_serio_close;
+	serio->port_data = serport;
+
+	serio_register_port(serport->serio);
+	printk(KERN_INFO "serio: Serial port %s\n", tty_name(tty, name));
+	do{
+		retval = wait_event_interruptible(serport->wait, test_bit(SERPORT_DEAD, &serport->flags));
+	}while( !test_bit(SERPORT_DEAD, &serport->flags) );
+	serio_unregister_port(serport->serio);
+	serport->serio = NULL;
+
+	retval = 0;
+	clear_bit(SERPORT_DEAD, &serport->flags);
+	clear_bit(SERPORT_BUSY, &serport->flags);
+
+KTHREAD_EXIT:
+	printk(KERN_DEBUG "serport: kserportd exiting with %d\n", retval);
+	return retval;
+}
+
+static void serport_wq_handle(struct work_struct *work)
+{
+	struct serport *serport = container_of(work, struct serport, create_kthread_wq);
+
+	schedule();
+	if (!test_bit(SERPORT_BUSY, &serport->flags))
+	{
+		serport_task = kthread_run(serport_thread, serport, "kserportd");
+		if (IS_ERR(serport_task)) {
+			printk(KERN_ERR "serport: Failed to start kserportd\n");
+			schedule_work(&serport->create_kthread_wq);
+			return;
+		}
+	}
+
+	printk(KERN_DEBUG "serport: serport_wq_handle done!!\n");
+	return;
+}
 
 /*
  * Callback functions from the serio code.
@@ -110,6 +190,20 @@ static int serport_ldisc_open(struct tty_struct *tty)
 static void serport_ldisc_close(struct tty_struct *tty)
 {
 	struct serport *serport = (struct serport *) tty->disc_data;
+
+	// EETI Patch //
+	unsigned long flags;
+	if (test_bit(SERPORT_BUSY, &serport->flags))
+	{
+		spin_lock_irqsave(&serport->lock, flags);
+		set_bit(SERPORT_DEAD, &serport->flags);
+		spin_unlock_irqrestore(&serport->lock, flags);
+
+		wake_up_interruptible(&serport->wait);
+		do{
+			schedule();
+		}while(test_bit(SERPORT_BUSY, &serport->flags));
+	}
 
 	kfree(serport);
 }
@@ -195,6 +289,13 @@ static int serport_ldisc_ioctl(struct tty_struct * tty, struct file * file, unsi
 		serport->id.proto = type & 0x000000ff;
 		serport->id.id	  = (type & 0x0000ff00) >> 8;
 		serport->id.extra = (type & 0x00ff0000) >> 16;
+
+		// EETI Patch //
+		if( serport->id.proto==SERIO_EGALAX )
+		{
+			INIT_WORK(&serport->create_kthread_wq, serport_wq_handle);
+			schedule_work(&serport->create_kthread_wq);
+		}
 
 		return 0;
 	}

@@ -80,8 +80,8 @@ static int ventana_disp1_check_fb(struct device *dev, struct fb_info *info);
 static struct platform_pwm_backlight_data ventana_backlight_data = {
 	.pwm_id		= 2,
 	.max_brightness	= 255,
-	.dft_brightness	= 224,
-	.pwm_period_ns	= 5000000,
+	.dft_brightness	= 157,
+	.pwm_period_ns	= 4000000, /* TODO: HSD: PWM= 225 ~ 275 Hz */
 	.init		= ventana_backlight_init,
 	.exit		= ventana_backlight_exit,
 	.notify		= ventana_backlight_notify,
@@ -97,6 +97,10 @@ static struct platform_device ventana_backlight_device = {
 	},
 };
 
+/*
+ * Now, HSD Power ON/OFF Seq is implemented in dc.c & pwm_bl.c.
+ * So, both ventana_panel_enable() & ventana_panel_disable() won't be called.
+ */
 static int ventana_panel_enable(void)
 {
 	struct regulator *reg = regulator_get(NULL, "vdd_ldo4");
@@ -195,15 +199,17 @@ static struct resource ventana_disp2_resources[] = {
 
 static struct tegra_dc_mode ventana_panel_modes[] = {
 	{
-		.pclk = 72072000,
+		/* Warning.
+		 * The real LCD pclk will be replaced in tegra_dc_probe(). */
+		.pclk = 83800000,
 		.h_ref_to_sync = 11,
 		.v_ref_to_sync = 1,
 		.h_sync_width = 58,
 		.v_sync_width = 4,
 		.h_back_porch = 58,
 		.v_back_porch = 4,
-		.h_active = 1366,
-		.v_active = 768,
+		.h_active = 1280,
+		.v_active = 800,
 		.h_front_porch = 58,
 		.v_front_porch = 4,
 	},
@@ -211,15 +217,15 @@ static struct tegra_dc_mode ventana_panel_modes[] = {
 
 static struct tegra_fb_data ventana_fb_data = {
 	.win		= 0,
-	.xres		= 1366,
-	.yres		= 768,
+	.xres		= 1280,
+	.yres		= 800,
 	.bits_per_pixel	= 32,
 };
 
 static struct tegra_fb_data ventana_hdmi_fb_data = {
 	.win		= 0,
-	.xres		= 1366,
-	.yres		= 768,
+	.xres		= 1280,
+	.yres		= 800,
 	.bits_per_pixel	= 32,
 };
 
@@ -335,15 +341,21 @@ struct early_suspend ventana_panel_early_suspender;
 static void ventana_panel_early_suspend(struct early_suspend *h)
 {
 	unsigned i;
+
+	printk("ventana_panel_early_suspend() in+\n");
 	for (i = 0; i < num_registered_fb; i++)
 		fb_blank(registered_fb[i], FB_BLANK_POWERDOWN);
+	printk("ventana_panel_early_suspend() out-\n");
 }
 
 static void ventana_panel_late_resume(struct early_suspend *h)
 {
 	unsigned i;
+
+	printk("ventana_panel_late_resume() in+\n");
 	for (i = 0; i < num_registered_fb; i++)
 		fb_blank(registered_fb[i], FB_BLANK_UNBLANK);
+	printk("ventana_panel_late_resume() out-\n");
 }
 #endif
 
@@ -351,6 +363,8 @@ int __init ventana_panel_init(void)
 {
 	int err;
 	struct resource *res;
+
+	printk("Disp: ventana_panel_init() in\n");
 
 	gpio_request(ventana_pnl_pwr_enb, "pnl_pwr_enb");
 	gpio_direction_output(ventana_pnl_pwr_enb, 1);
@@ -368,6 +382,7 @@ int __init ventana_panel_init(void)
 	gpio_request(ventana_hdmi_hpd, "hdmi_hpd");
 	gpio_direction_input(ventana_hdmi_hpd);
 
+/* CONFIG_HAS_EARLYSUSPEND has been defined. */
 #ifdef CONFIG_HAS_EARLYSUSPEND
 	ventana_panel_early_suspender.suspend = ventana_panel_early_suspend;
 	ventana_panel_early_suspender.resume = ventana_panel_late_resume;
@@ -397,6 +412,8 @@ int __init ventana_panel_init(void)
 
 	if (!err)
 		err = nvhost_device_register(&ventana_disp2_device);
+
+	printk("Disp: ventana_panel_init() out\n");
 
 	return err;
 }

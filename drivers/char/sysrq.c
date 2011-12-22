@@ -362,6 +362,8 @@ static struct sysrq_key_op sysrq_moom_op = {
 #ifdef CONFIG_BLOCK
 static void sysrq_handle_thaw(int key)
 {
+	WARN_ON(1);
+	printk("sysrq_handle_thaw pid:%d %s\n",current->pid,current->comm);
 	emergency_thaw_all();
 }
 static struct sysrq_key_op sysrq_thaw_op = {
@@ -509,7 +511,8 @@ void __handle_sysrq(int key, bool check_mask)
 	orig_log_level = console_loglevel;
 	console_loglevel = 7;
 	printk(KERN_INFO "SysRq : ");
-
+        WARN_ON(1);
+        printk("__handle_sysrq pid:%d\n %s",current->pid,current->comm);
         op_p = __sysrq_get_key_op(key);
         if (op_p) {
 		/*

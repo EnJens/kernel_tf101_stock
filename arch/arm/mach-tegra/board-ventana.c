@@ -34,6 +34,7 @@
 #include <linux/input.h>
 #include <linux/platform_data/tegra_usb.h>
 #include <linux/usb/android_composite.h>
+#include <linux/usb/f_accessory.h>
 #include <linux/mfd/tps6586x.h>
 #include <linux/memblock.h>
 
@@ -47,6 +48,9 @@
 
 #include <sound/wm8903.h>
 
+#ifdef CONFIG_TOUCHSCREEN_ATMEL_MT_T9_EP102
+#include <linux/i2c/atmel_maxtouch_ep102.h>
+#endif
 #include <mach/clk.h>
 #include <mach/iomap.h>
 #include <mach/irqs.h>
@@ -60,6 +64,7 @@
 #include <asm/mach/arch.h>
 #include <mach/usb_phy.h>
 #include <mach/tegra_das.h>
+#include <mach/board-ventana-misc.h>
 
 #include "board.h"
 #include "clock.h"
@@ -69,10 +74,13 @@
 #include "fuse.h"
 #include "wakeups-t2.h"
 
+
 static struct usb_mass_storage_platform_data tegra_usb_fsg_platform = {
-	.vendor = "NVIDIA",
-	.product = "Tegra 2",
-	.nluns = 1,
+//	.vendor = "NVIDIA",
+	.vendor = "ASUS",
+//	.product = "Tegra 2",
+	.product = "Mass Storage",
+	.nluns = 2,
 };
 
 static struct platform_device tegra_usb_fsg_device = {
@@ -98,13 +106,14 @@ static struct plat_serial8250_port debug_uart_platform_data[] = {
 	}
 };
 
-static struct platform_device debug_uart = {
+struct platform_device debug_uart = {
 	.name = "serial8250",
 	.id = PLAT8250_DEV_PLATFORM,
 	.dev = {
 		.platform_data = debug_uart_platform_data,
 	},
 };
+EXPORT_SYMBOL(debug_uart);
 
 static struct tegra_audio_platform_data tegra_spdif_pdata = {
 	.dma_on = true,  /* use dma by default */
@@ -216,6 +225,8 @@ static noinline void __init tegra_setup_bluesleep(void)
 	tegra_gpio_enable(TEGRA_GPIO_PU6);
 	tegra_gpio_enable(TEGRA_GPIO_PU1);
 
+	kfree(res);
+
 	return;
 
 err_free_res:
@@ -234,10 +245,14 @@ static __initdata struct tegra_clk_init_table ventana_clk_init_table[] = {
 	{ "uartc",	"pll_m",	600000000,	false},
 	{ "blink",	"clk_32k",	32768,		false},
 	{ "pll_p_out4",	"pll_p",	24000000,	true },
-	{ "pwm",	"clk_32k",	32768,		false},
+	/*
+	 * The clk source for "pwm" freq is alway divided by 256 first.
+	 * So, We need a clk source with higher rate.
+	 * 12M Hz from "clk_m" is enough.
+	 */
+	{ "pwm",	"clk_m",	12000000,       false},
 	{ "pll_a",	NULL,		56448000,	false},
 	{ "pll_a_out0",	NULL,		11289600,	false},
-	{ "clk_dev1",	"pll_a_out0",	0,		true},
 	{ "i2s1",	"pll_a_out0",	11289600,	false},
 	{ "i2s2",	"pll_a_out0",	11289600,	false},
 	{ "audio",	"pll_a_out0",	11289600,	false},
@@ -247,26 +262,51 @@ static __initdata struct tegra_clk_init_table ventana_clk_init_table[] = {
 	{ NULL,		NULL,		0,		0},
 };
 
-#define USB_MANUFACTURER_NAME		"NVIDIA"
-#define USB_PRODUCT_NAME		"Ventana"
-#define USB_PRODUCT_ID_MTP_ADB		0x7100
-#define USB_PRODUCT_ID_MTP		0x7102
-#define USB_PRODUCT_ID_RNDIS		0x7103
-#define USB_VENDOR_ID			0x0955
+/* ASUS EP101 product ID */
+//#define USB_MANUFACTURER_NAME		"NVIDIA"
+#define USB_MANUFACTURER_NAME		"ASUS"
+//#define USB_PRODUCT_NAME		"Ventana"
+#define USB_PRODUCT_NAME		"EeePad"
+//#define USB_PRODUCT_ID_MTP_ADB		0x7100
+#define USB_PRODUCT_ID_MTP_ADB		0x4E1F
+//#define USB_PRODUCT_ID_MTP		0x7102
+#define USB_PRODUCT_ID_MTP		0x4E0F
+//#define USB_PRODUCT_ID_RNDIS		0x7103
+#define USB_PRODUCT_ID_RNDIS		0x4E2F
+#define USB_PRODUCT_ID_RNDIS_ADB    0x4E3F
+//#define USB_VENDOR_ID			0x0955
 
-static char *usb_functions_mtp_ums[] = { "mtp", "usb_mass_storage" };
-static char *usb_functions_mtp_adb_ums[] = { "mtp", "adb", "usb_mass_storage" };
+/* ASUS SL101 product ID */
+#define USB_SL101_PRODUCT_ID_MTP_ADB		0x4E01
+#define USB_SL101_PRODUCT_ID_MTP		0x4E00
+#define USB_SL101_PRODUCT_ID_RNDIS		0x4E02
+#define USB_SL101_PRODUCT_ID_RNDIS_ADB    0x4E03
+
+/* ASUS vendor ID */
+#define USB_VENDOR_ID			0x0B05
+
+//static char *usb_functions_mtp_ums[] = { "mtp", "usb_mass_storage" };
+static char *usb_functions_mtp_ums[] = { "mtp" };
+//static char *usb_functions_mtp_adb_ums[] = { "mtp", "adb", "usb_mass_storage" };
+static char *usb_functions_mtp_adb_ums[] = { "mtp", "adb" };
+#ifdef CONFIG_USB_ANDROID_ACCESSORY
+static char *usb_functions_accessory[] = { "accessory" };
+static char *usb_functions_accessory_adb[] = { "accessory", "adb" };
+#endif
 #ifdef CONFIG_USB_ANDROID_RNDIS
 static char *usb_functions_rndis[] = { "rndis" };
 static char *usb_functions_rndis_adb[] = { "rndis", "adb" };
 #endif
 static char *usb_functions_all[] = {
+#ifdef CONFIG_USB_ANDROID_ACCESSORY
+	"accessory",
+#endif
 #ifdef CONFIG_USB_ANDROID_RNDIS
 	"rndis",
 #endif
 	"mtp",
 	"adb",
-	"usb_mass_storage"
+//	"usb_mass_storage"
 };
 
 static struct android_usb_product usb_products[] = {
@@ -280,6 +320,20 @@ static struct android_usb_product usb_products[] = {
 		.num_functions  = ARRAY_SIZE(usb_functions_mtp_adb_ums),
 		.functions      = usb_functions_mtp_adb_ums,
 	},
+#ifdef CONFIG_USB_ANDROID_ACCESSORY
+	{
+		.vendor_id      = USB_ACCESSORY_VENDOR_ID,
+		.product_id     = USB_ACCESSORY_PRODUCT_ID,
+		.num_functions  = ARRAY_SIZE(usb_functions_accessory),
+		.functions      = usb_functions_accessory,
+	},
+	{
+		.vendor_id      = USB_ACCESSORY_VENDOR_ID,
+		.product_id     = USB_ACCESSORY_ADB_PRODUCT_ID,
+		.num_functions  = ARRAY_SIZE(usb_functions_accessory_adb),
+		.functions      = usb_functions_accessory_adb,
+	},
+#endif
 #ifdef CONFIG_USB_ANDROID_RNDIS
 	{
 		.product_id     = USB_PRODUCT_ID_RNDIS,
@@ -287,7 +341,8 @@ static struct android_usb_product usb_products[] = {
 		.functions      = usb_functions_rndis,
 	},
 	{
-		.product_id     = USB_PRODUCT_ID_RNDIS,
+//		.product_id     = USB_PRODUCT_ID_RNDIS,
+		.product_id     = USB_PRODUCT_ID_RNDIS_ADB,
 		.num_functions  = ARRAY_SIZE(usb_functions_rndis_adb),
 		.functions      = usb_functions_rndis_adb,
 	},
@@ -360,7 +415,7 @@ static struct tegra_ulpi_config ventana_ehci2_ulpi_phy_config = {
 
 static struct tegra_ehci_platform_data ventana_ehci2_ulpi_platform_data = {
 	.operating_mode = TEGRA_USB_HOST,
-	.power_down_on_bus_suspend = 1,
+	.power_down_on_bus_suspend = 0,
 	.phy_config = &ventana_ehci2_ulpi_phy_config,
 };
 
@@ -384,7 +439,7 @@ static const struct tegra_pingroup_config i2c2_gen2 = {
 static struct tegra_i2c_platform_data ventana_i2c2_platform_data = {
 	.adapter_nr	= 1,
 	.bus_count	= 2,
-	.bus_clk_rate	= { 400000, 10000 },
+	.bus_clk_rate	= {400000, 100000 },
 	.bus_mux	= { &i2c2_ddc, &i2c2_gen2 },
 	.bus_mux_len	= { 1, 1 },
 	.slave_addr = 0x00FC,
@@ -418,7 +473,6 @@ static struct tegra_audio_platform_data tegra_audio_pdata[] = {
 		.bit_size	= I2S_BIT_SIZE_16,
 		.i2s_bus_width = 32,
 		.dsp_bus_width = 16,
-		.en_dmic = false, /* by default analog mic is used */
 	},
 	/* For I2S2 */
 	[1] = {
@@ -551,23 +605,31 @@ static void ventana_i2c_init(void)
 		.debounce_interval = 10,	\
 	}
 
+#define GPIO_SW(_id, _gpio, _iswake)		\
+	{					\
+		.code = _id,			\
+		.gpio = TEGRA_GPIO_##_gpio,	\
+		.active_low = 0,		\
+		.desc = #_id,			\
+		.type = EV_SW,			\
+		.wakeup = _iswake,		\
+		.debounce_interval = 10,	\
+	}
+
 static struct gpio_keys_button ventana_keys[] = {
-	[0] = GPIO_KEY(KEY_FIND, PQ3, 0),
-	[1] = GPIO_KEY(KEY_HOME, PQ1, 0),
-	[2] = GPIO_KEY(KEY_BACK, PQ2, 0),
-	[3] = GPIO_KEY(KEY_VOLUMEUP, PQ5, 0),
-	[4] = GPIO_KEY(KEY_VOLUMEDOWN, PQ4, 0),
-	[5] = GPIO_KEY(KEY_POWER, PV2, 1),
-	[6] = GPIO_KEY(KEY_MENU, PC7, 0),
+	[0] = GPIO_KEY(KEY_VOLUMEUP, PQ5, 0),
+	[1] = GPIO_KEY(KEY_VOLUMEDOWN, PQ4, 0),
+	[2] = GPIO_KEY(KEY_POWER, PV2, 1),
+	[3] = GPIO_SW(SW_LID, PS4, 1),
 };
 
 #define PMC_WAKE_STATUS 0x14
-
+extern unsigned long temp_wake_status;
 static int ventana_wakeup_key(void)
 {
-	unsigned long status =
-		readl(IO_ADDRESS(TEGRA_PMC_BASE) + PMC_WAKE_STATUS);
-
+	unsigned long status = temp_wake_status;
+	if(status & TEGRA_WAKE_GPIO_PV2)
+		temp_wake_status&=(~TEGRA_WAKE_GPIO_PV2);
 	return status & TEGRA_WAKE_GPIO_PV2 ? KEY_POWER : KEY_RESERVED;
 }
 
@@ -644,9 +706,14 @@ static int __init ventana_touch_init_panjit(void)
 
 	return 0;
 }
+#else
+static int __init ventana_touch_init_panjit(void)
+{
+	return 0;
+}
 #endif
 
-#ifdef CONFIG_TOUCHSCREEN_ATMEL_MT_T9
+#if defined(CONFIG_TOUCHSCREEN_ATMEL_MT_T9) || defined(CONFIG_TOUCHSCREEN_ATMEL_MT_T9_EP102)
 /* Atmel MaxTouch touchscreen              Driver data */
 /*-----------------------------------------------------*/
 /*
@@ -663,14 +730,15 @@ static u8 valid_interrupt(void)
 	return !read_chg();
 }
 
+#ifdef CONFIG_TOUCHSCREEN_ATMEL_MT_T9
 static struct mxt_platform_data Atmel_mxt_info = {
 	/* Maximum number of simultaneous touches to report. */
 	.numtouch = 10,
 	// TODO: no need for any hw-specific things at init/exit?
 	.init_platform_hw = NULL,
 	.exit_platform_hw = NULL,
-	.max_x = 1366,
-	.max_y = 768,
+	.max_x = 1280,
+	.max_y = 799,
 	.valid_interrupt = &valid_interrupt,
 	.read_chg = &read_chg,
 };
@@ -682,44 +750,65 @@ static struct i2c_board_info __initdata i2c_info[] = {
 	 .platform_data = &Atmel_mxt_info,
 	 },
 };
+#endif
+
+#ifdef CONFIG_TOUCHSCREEN_ATMEL_MT_T9_EP102
+static struct mxt_platform_data_ep102 Atmel_mxt_info_ep102 = {
+	/* Maximum number of simultaneous touches to report. */
+	.numtouch = 10,
+	// TODO: no need for any hw-specific things at init/exit?
+	.init_platform_hw = NULL,
+	.exit_platform_hw = NULL,
+	.max_x = 1280,	//1366
+	.max_y = 799,	//768
+	.valid_interrupt = &valid_interrupt,
+	.read_chg = &read_chg,
+};
+
+static struct i2c_board_info __initdata i2c_info_ep102[] = {
+	{
+	 I2C_BOARD_INFO("maXTouch_ep102", MXT_I2C_ADDRESS_EP102),
+	 .irq = TEGRA_GPIO_TO_IRQ(TEGRA_GPIO_PV6),
+	 .platform_data = &Atmel_mxt_info_ep102,
+	 },
+};
+#endif
 
 static int __init ventana_touch_init_atmel(void)
 {
+
+	tegra_gpio_enable(TEGRA_GPIO_PV4);
+	gpio_request(TEGRA_GPIO_PV4,"atmel_touch_wake");
+	gpio_direction_output(TEGRA_GPIO_PV4,0);
+
 	tegra_gpio_enable(TEGRA_GPIO_PV6);
+	gpio_request(TEGRA_GPIO_PV6,"atmel_touch_chg");
+
 	tegra_gpio_enable(TEGRA_GPIO_PQ7);
+	gpio_request(TEGRA_GPIO_PQ7,"atmel_touch_reset");
 
 	gpio_set_value(TEGRA_GPIO_PQ7, 0);
 	msleep(1);
 	gpio_set_value(TEGRA_GPIO_PQ7, 1);
 	msleep(100);
 
+#ifdef CONFIG_TOUCHSCREEN_ATMEL_MT_T9
 	i2c_register_board_info(0, i2c_info, 1);
+#endif
+#ifdef CONFIG_TOUCHSCREEN_ATMEL_MT_T9_EP102
+	printk("Touch : %s\n",__FUNCTION__);
+	i2c_register_board_info(0, i2c_info_ep102, 1);
+#endif
 
 	return 0;
 }
 #endif
 
-static struct usb_phy_plat_data tegra_usb_phy_pdata[] = {
-	[0] = {
-			.instance = 0,
-			.vbus_irq = TPS6586X_INT_BASE + TPS6586X_INT_USB_DET,
-			.vbus_gpio = TEGRA_GPIO_PD0,
-	},
-	[1] = {
-			.instance = 1,
-			.vbus_gpio = -1,
-	},
-	[2] = {
-			.instance = 2,
-			.vbus_gpio = TEGRA_GPIO_PD3,
-	},
-};
-
 static struct tegra_ehci_platform_data tegra_ehci_pdata[] = {
 	[0] = {
 			.phy_config = &utmi_phy_config[0],
 			.operating_mode = TEGRA_USB_HOST,
-			.power_down_on_bus_suspend = 1,
+			.power_down_on_bus_suspend = 0,
 	},
 	[1] = {
 			.phy_config = &ulpi_phy_config,
@@ -729,9 +818,127 @@ static struct tegra_ehci_platform_data tegra_ehci_pdata[] = {
 	[2] = {
 			.phy_config = &utmi_phy_config[1],
 			.operating_mode = TEGRA_USB_HOST,
-			.power_down_on_bus_suspend = 1,
+			.power_down_on_bus_suspend = 0,
 	},
 };
+
+#ifdef CONFIG_TOUCHSCREEN_CYTTSP_I2C
+#define CY_USE_I2C
+#ifdef CY_USE_I2C
+#include <linux/cyttsp.h>
+#define CY_I2C_IRQ_GPIO	TEGRA_GPIO_PV6
+#define CY_I2C_ADR	0x67
+#define CY_USE_MT
+#define CY_MAXX 1291
+#define CY_MAXY 806
+
+static int cyttsp_i2c_init(int on)
+{
+	int ret;
+
+	if (on) {
+		ret = gpio_request(CY_I2C_IRQ_GPIO, "CYTTSP I2C IRQ GPIO");
+		if (ret) {
+			printk(KERN_ERR "%s: Failed to request GPIO %d\n",
+			       __func__, CY_I2C_IRQ_GPIO);
+			return ret;
+		}
+		gpio_direction_input(CY_I2C_IRQ_GPIO);
+	} else {
+		gpio_free(CY_I2C_IRQ_GPIO);
+	}
+	return 0;
+}
+
+static int cyttsp_i2c_wakeup(void)
+{
+	return 0;
+}
+
+static struct cyttsp_platform_data cypress_i2c_ttsp_platform_data = {
+	.wakeup = cyttsp_i2c_wakeup,
+	.init = cyttsp_i2c_init,
+#ifdef CY_USE_MT
+	.mt_sync = input_mt_sync,
+#endif
+	.maxx = CY_MAXX,
+	.maxy = CY_MAXY,
+	.flags = 0x04,
+	.gen = CY_GEN4,
+	.use_mt = 1,
+	.use_trk_id = 0,
+	.use_hndshk = 0,
+	.use_timer = 0,
+	.use_sleep = 1,
+	.use_gestures = 0,
+	.use_load_file = 0,
+	.use_force_fw_update = 0,
+	.use_virtual_keys = 0,
+	/* activate up to 4 groups
+	 * and set active distance
+	 */
+	.gest_set = CY_GEST_GRP_NONE | CY_ACT_DIST,
+	/* change act_intrvl to customize the Active power state
+	 * scanning/processing refresh interval for Operating mode
+	 */
+	.act_intrvl = CY_ACT_INTRVL_DFLT,
+	/* change tch_tmout to customize the touch timeout for the
+	 * Active power state for Operating mode
+	 */
+	.tch_tmout = CY_TCH_TMOUT_DFLT,
+	/* change lp_intrvl to customize the Low Power power state
+	 * scanning/processing refresh interval for Operating mode
+	 */
+	.lp_intrvl = CY_LP_INTRVL_DFLT,
+	.name = CY_I2C_NAME,
+	.irq_gpio = CY_I2C_IRQ_GPIO,
+};
+static const struct i2c_board_info ventana_i2c_bus1_touch_info[] = {
+	{
+		I2C_BOARD_INFO(CY_I2C_NAME, CY_I2C_ADR),
+		.irq = INT_GPIO_BASE+CY_I2C_IRQ_GPIO, //
+		.platform_data = &cypress_i2c_ttsp_platform_data,
+	},
+};
+#else
+static struct panjit_i2c_ts_platform_data panjit_data = {
+        .gpio_reset = TEGRA_GPIO_PQ7,
+};
+
+static const struct i2c_board_info ventana_i2c_bus1_touch_info[] = {
+        {
+                I2C_BOARD_INFO("panjit_touch", 0x3),
+		   .irq            = TEGRA_GPIO_TO_IRQ(TEGRA_GPIO_PV6),
+                .platform_data  = &panjit_data,
+        },
+};
+#endif
+
+static int __init ventana_touch_init(void)
+{
+        tegra_gpio_enable(TEGRA_GPIO_PV6);
+
+        tegra_gpio_enable(TEGRA_GPIO_PQ7);
+        i2c_register_board_info(0, ventana_i2c_bus1_touch_info, 1);
+
+        return 0;
+}
+#endif
+
+#ifdef CONFIG_DSP_FM34
+static const struct i2c_board_info ventana_dsp_board_info[] = {
+	{
+		I2C_BOARD_INFO("dsp_fm34", 0x60),
+	},
+};
+
+static int __init ventana_dsp_init(void)
+{
+        i2c_register_board_info(0, ventana_dsp_board_info, 1);
+
+        return 0;
+}
+#endif
 
 static struct platform_device *tegra_usb_otg_host_register(void)
 {
@@ -785,12 +992,24 @@ static struct tegra_otg_platform_data tegra_otg_pdata = {
 	.host_unregister = &tegra_usb_otg_host_unregister,
 };
 
+extern int console_none_on_cmdline;
 static int __init ventana_gps_init(void)
 {
 	struct clk *clk32 = clk_get_sys(NULL, "blink");
 	if (!IS_ERR(clk32)) {
 		clk_set_rate(clk32,clk32->parent->rate);
 		clk_enable(clk32);
+	}
+
+	if (ASUSGetProjectID() == 103) {
+		tegra_gpio_enable(TEGRA_GPIO_PS6);
+		gpio_request(TEGRA_GPIO_PS6, "GPS_ENB");
+		if (console_none_on_cmdline) {
+			gpio_direction_output(TEGRA_GPIO_PS6, 0);
+			platform_device_register(&tegra_uartd_device);
+		}
+		else
+			platform_device_register(&debug_uart);
 	}
 
 	tegra_gpio_enable(TEGRA_GPIO_PZ3);
@@ -800,10 +1019,13 @@ static int __init ventana_gps_init(void)
 static void ventana_power_off(void)
 {
 	int ret;
-
+	int i=0;
+       while( i++ < 100 ){
 	ret = tps6586x_power_off();
-	if (ret)
+	       if (!ret)
+			break;
 		pr_err("ventana: failed to power off\n");
+      }
 
 	while(1);
 }
@@ -819,8 +1041,6 @@ static void ventana_usb_init(void)
 {
 	char *src = NULL;
 	int i;
-
-	tegra_usb_phy_init(tegra_usb_phy_pdata, ARRAY_SIZE(tegra_usb_phy_pdata));
 
 	tegra_otg_device.dev.platform_data = &tegra_otg_pdata;
 	platform_device_register(&tegra_otg_device);
@@ -842,56 +1062,96 @@ static void ventana_usb_init(void)
 	platform_device_register(&rndis_device);
 #endif
 }
+unsigned int boot_reason;
+void tegra_booting_info(void )
+{
+	#define SWR_SYS_RST_STA  (1<<13)
+	#define WDT_SYS_RST_STA  (1<<12)
+	unsigned int reg=0;
+	static void __iomem *clk_source = IO_ADDRESS(TEGRA_CLK_RESET_BASE);
 
+	reg = readl(clk_source);
+	if (reg & SWR_SYS_RST_STA){
+		boot_reason=SWR_SYS_RST_STA;
+		printk("tegra_booting_info-rebooting\n");
+	} else if (reg & WDT_SYS_RST_STA){
+		boot_reason=WDT_SYS_RST_STA;
+		printk("tegra_booting_info-watchdog\n");
+	} else{
+		boot_reason=0;
+		printk("tegra_booting_info-normal\n");
+	}
+}
 static void __init tegra_ventana_init(void)
 {
 #if defined(CONFIG_TOUCHSCREEN_PANJIT_I2C) || \
-	defined(CONFIG_TOUCHSCREEN_ATMEL_MT_T9)
+	defined(CONFIG_TOUCHSCREEN_ATMEL_MT_T9) || defined(CONFIG_TOUCHSCREEN_ATMEL_MT_T9_EP102)
 	struct board_info BoardInfo;
 #endif
-
+	tegra_booting_info();
 	tegra_common_init();
+	ventana_setup_misc();
 	tegra_clk_init_from_table(ventana_clk_init_table);
 	ventana_pinmux_init();
 	ventana_i2c_init();
+	snprintf(ventana_chipid, sizeof(ventana_chipid), "%016llx",
+	    tegra_chip_uid());
 	snprintf(usb_serial_num, sizeof(usb_serial_num), "%llx", tegra_chip_uid());
 	andusb_plat.serial_number = kstrdup(usb_serial_num, GFP_KERNEL);
+	if (ASUSGetProjectID() == 102) {
+		andusb_plat.products[0].product_id = USB_SL101_PRODUCT_ID_MTP;
+		andusb_plat.products[1].product_id = USB_SL101_PRODUCT_ID_MTP_ADB;
+		andusb_plat.products[2].product_id = USB_SL101_PRODUCT_ID_RNDIS;
+		andusb_plat.products[3].product_id = USB_SL101_PRODUCT_ID_RNDIS_ADB;
+	}
+
 	tegra_i2s_device1.dev.platform_data = &tegra_audio_pdata[0];
 	tegra_i2s_device2.dev.platform_data = &tegra_audio_pdata[1];
 	tegra_spdif_device.dev.platform_data = &tegra_spdif_pdata;
-	if (is_tegra_debug_uartport_hs() == true)
-		platform_device_register(&tegra_uartd_device);
-	else
-		platform_device_register(&debug_uart);
 	tegra_das_device.dev.platform_data = &tegra_das_pdata;
-	tegra_ehci2_device.dev.platform_data
-		= &ventana_ehci2_ulpi_platform_data;
+
+	//disable for wifi sku
+	if (ASUS3GAvailable()) {
+               tegra_ehci2_device.dev.platform_data
+                       = &ventana_ehci2_ulpi_platform_data;
+	}
+
 	platform_add_devices(ventana_devices, ARRAY_SIZE(ventana_devices));
 
+	if ((ASUSGetProjectID() != 103) && (!console_none_on_cmdline)) {
+		//register debug uart resource only if
+		//"console=ttyXX" is specified and running target platform
+		//is not JN101(EP103)
+		platform_device_register(&debug_uart);
+		tegra_gpio_enable(TEGRA_GPIO_PB0);
+		gpio_request(TEGRA_GPIO_PB0, "UART4_RXD");
+		//limit RXD of UART debug console.
+		gpio_direction_output(TEGRA_GPIO_PB0, 1);
+	}
+
 	ventana_sdhci_init();
-	ventana_charge_init();
+	//ventana_charge_init();
 	ventana_regulator_init();
 
-#if defined(CONFIG_TOUCHSCREEN_PANJIT_I2C) || \
-	defined(CONFIG_TOUCHSCREEN_ATMEL_MT_T9)
-
-	tegra_get_board_info(&BoardInfo);
-
-	/* boards with sku > 0 have atmel touch panels */
-	if (BoardInfo.sku) {
-		pr_info("Initializing Atmel touch driver\n");
-		ventana_touch_init_atmel();
-	} else {
-		pr_info("Initializing Panjit touch driver\n");
-		ventana_touch_init_panjit();
-	}
+#if defined(CONFIG_TOUCHSCREEN_ATMEL_MT_T9) || defined(CONFIG_TOUCHSCREEN_ATMEL_MT_T9_EP102)
+       pr_info("Initializing Atmel touch driver\n");
+       ventana_touch_init_atmel();
+#elif defined(CONFIG_TOUCHSCREEN_PANJIT_I2C)
+       pr_info("Initializing Panjit touch driver\n");
+       ventana_touch_init_panjit();
 #endif
 
+#ifdef CONFIG_TOUCHSCREEN_CYTTSP_I2C
+ventana_touch_init();
+#endif
 #ifdef CONFIG_KEYBOARD_GPIO
 	ventana_keys_init();
 #endif
 #ifdef CONFIG_KEYBOARD_TEGRA
 	ventana_kbc_init();
+#endif
+#ifdef CONFIG_DSP_FM34
+	ventana_dsp_init();
 #endif
 
 	ventana_wired_jack_init();

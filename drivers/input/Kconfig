@@ -179,6 +179,24 @@ config XEN_KBDDEV_FRONTEND
 	  This driver implements the front-end of the Xen virtual
 	  keyboard and mouse device driver.  It communicates with a back-end
 	  in another domain.
+config SENSORS_CAP_LDS6126
+	tristate "Capacitive Sensor Driver LDS6126"
+	depends on I2C
+	help
+	  This enables support for Cap sensor over I2C based sensors.	  	  
+config SENSORS_PROX_LDS6202
+	tristate "IDT Proximity Sensor Driver LDS6202"
+	depends on I2C
+	help
+	  This enables support for Proximity sensor over I2C based sensors.
+
+config ASUSEC
+        bool "ASUS embedded controller interface"
+        depends on I2C
+
+config DSP_FM34
+        tristate "DSP FM34 driver"
+        depends on I2C
 
 comment "Input Device Drivers"
 

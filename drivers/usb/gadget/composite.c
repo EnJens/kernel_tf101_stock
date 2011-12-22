@@ -24,6 +24,7 @@
 #include <linux/kernel.h>
 #include <linux/slab.h>
 #include <linux/device.h>
+#include <linux/gpio.h>
 
 #include <linux/usb/composite.h>
 
@@ -38,8 +39,9 @@
 /* big enough to hold our biggest descriptor */
 #define USB_BUFSIZ	1024
 
+extern char * desc_interface_name;
 static struct usb_composite_driver *composite;
-
+static int is_switch_work_initialized = 0;
 /* Some systems will need runtime overrides for the  product identifers
  * published in the device descriptor, either numbers or strings or both.
  * String parameters are in UTF-8 (superset of ASCII's 7 bit characters).
@@ -68,6 +70,34 @@ MODULE_PARM_DESC(iProduct, "USB Product string");
 static char *iSerialNumber;
 module_param(iSerialNumber, charp, 0);
 MODULE_PARM_DESC(iSerialNumber, "SerialNumber string");
+
+static void string_override(struct usb_gadget_strings **tab, u8 id, const char *s);
+
+/* GPIO VOLUME UP + DOWN */
+#define TEGRA_GPIO_PQ4          132
+#define TEGRA_GPIO_PQ5          133
+  //added by yi-hsin serial number for volume up+down
+  #define MAX_SERIAL_LEN 256
+  static char desc_serial_number[MAX_SERIAL_LEN]= "0000000000000000";
+  //Devices USB Serial Number
+  extern unsigned char *USB_SN_String;
+
+ //added by yi-hsin for volume up+down gpio control
+static int USB_key_volume(void){
+
+        int volume_down_value =0;
+         int volume_up_value =0;
+         int ret=0;
+
+         //read volume down and up to enable.disable serial number
+         volume_down_value = gpio_get_value(TEGRA_GPIO_PQ4);
+         volume_up_value = gpio_get_value(TEGRA_GPIO_PQ5);
+        if (volume_down_value == 0 && volume_down_value == 0 ){
+                 printk(KERN_INFO"the hint is be click, disable usb serial number\n");
+                 return 1;
+         }
+          return 0;
+ }
 
 /*-------------------------------------------------------------------------*/
 
@@ -909,6 +939,18 @@ composite_setup(struct usb_gadget *gadget, const struct usb_ctrlrequest *ctrl)
 		switch (w_value >> 8) {
 
 		case USB_DT_DEVICE:
+			//add for single interface product name
+			string_override(composite->strings,
+				cdev->desc.iProduct , desc_interface_name);
+			//added by yi-hsin serial number for volume up+down
+			if(USB_key_volume() == 1){
+			        //added by yi-hsin serial number for factory
+			        string_override(composite->strings,
+			               cdev->desc.iSerialNumber, desc_serial_number);
+			}else{
+			        string_override(composite->strings,
+			                cdev->desc.iSerialNumber, USB_SN_String);
+			}
 			cdev->desc.bNumConfigurations =
 				count_configs(cdev, USB_DT_DEVICE);
 			value = min(w_length, (u16) sizeof cdev->desc);
@@ -1107,7 +1149,11 @@ static void composite_disconnect(struct usb_gadget *gadget)
 		composite->disconnect(cdev);
 
 	cdev->connected = 0;
-	schedule_work(&cdev->switch_work);
+	/*
+	 *  Invoke the function schedule_work only when the switch_work is initialized to avoid the null pointer accessing.
+	 */
+	if(is_switch_work_initialized == 1)
+		schedule_work(&cdev->switch_work);
 	spin_unlock_irqrestore(&cdev->lock, flags);
 }
 
@@ -1276,6 +1322,7 @@ static int composite_bind(struct usb_gadget *gadget)
 	if (status < 0)
 		goto fail;
 	INIT_WORK(&cdev->switch_work, composite_switch_work);
+	is_switch_work_initialized = 1;
 
 	cdev->desc = *composite->dev;
 	cdev->desc.bMaxPacketSize0 = gadget->ep0->maxpacket;

@@ -273,7 +273,9 @@ static int usb_dev_prepare(struct device *dev)
 static void usb_dev_complete(struct device *dev)
 {
 	/* Currently used only for rebinding interfaces */
+	printk("usb_dev_complete+\n");
 	usb_resume(dev, PMSG_ON);	/* FIXME: change to PMSG_COMPLETE */
+	printk("usb_dev_complete-\n");
 }
 
 static int usb_dev_suspend(struct device *dev)

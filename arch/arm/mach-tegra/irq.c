@@ -101,8 +101,7 @@ int tegra_set_lp0_wake_type(int irq, int flow_type)
 
 	return 0;
 }
-
-
+EXPORT_SYMBOL(tegra_set_lp0_wake_type);
 int tegra_set_lp1_wake(int irq, int enable)
 {
 	return tegra_legacy_irq_set_wake(irq, enable);
@@ -172,7 +171,11 @@ static void tegra_irq_handle_wake(void)
 
 		tegra_wake_irq_count[wake]++;
 
-		generic_handle_irq(irq);
+              if(wake_status != 0x800000)                 
+		       generic_handle_irq(irq);
+              else
+                     pr_info("skip card detect irq\n");
+
 	}
 }
 #endif
